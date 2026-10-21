@@ -1,12 +1,22 @@
 import React, { useState } from 'react';
-import { UploadedFile, ExcelRow } from '@/types';
+import { UploadedFile, ExcelRow, ExportFormat } from '@/types';
 import { Button } from '@/components/ui/Button';
-import { Combine, CheckSquare, Square, FileSpreadsheet, MoreVertical, Layers, ArrowDown, TableProperties, SplitSquareHorizontal } from 'lucide-react';
+import { Combine, CheckSquare, Square, FileSpreadsheet, MoreVertical, Layers, ArrowDown, TableProperties, SplitSquareHorizontal, Columns3, Save } from 'lucide-react';
 import { downloadExcelFile } from '@/lib/excel';
 import { ExportMenu } from '@/components/ui/ExportMenu';
+import {
+  guardSplitResultCount,
+  splitByColumnValue,
+  splitByPercentageColumns,
+  splitByPercentageRows,
+  splitByRowCount,
+  splitBySize,
+} from '@/features/merge-split/lib/splitFile';
+import { mergeColumns } from '@/features/merge-split/lib/mergeColumns';
 
 interface MergePanelProps {
   files: UploadedFile[];
+  onSaveAsFile?: (name: string, data: ExcelRow[]) => void;
 }
 
 interface ProcessedFile {
@@ -19,19 +29,28 @@ interface ProcessedFile {
     type: 'merge' | 'split';
 }
 
-export const MergePanel: React.FC<MergePanelProps> = ({ files }) => {
+
+export const MergePanel: React.FC<MergePanelProps> = ({ files, onSaveAsFile }) => {
   const [mode, setMode] = useState<'merge' | 'split'>('merge');
   
   // Merge state
   const [selectedMergeFileIds, setSelectedMergeFileIds] = useState<Set<string>>(new Set());
-  
+  const [mergeTarget, setMergeTarget] = useState<'rows' | 'column'>('rows');
+  const [columnMergeSelections, setColumnMergeSelections] = useState<Record<string, string>>({});
+  const [mergeOutputColumnName, setMergeOutputColumnName] = useState<string>('Merged Column');
+  const [mergeIncludeSourceColumn, setMergeIncludeSourceColumn] = useState<boolean>(true);
+  const [mergeExportFileFormat, setMergeExportFileFormat] = useState<ExportFormat>('xlsx');
+
   // Split state
   const [selectedSplitFileId, setSelectedSplitFileId] = useState<string>(files[0]?.id || '');
-  const [splitMethod, setSplitMethod] = useState<'column' | 'row' | 'percentage'>('column');
+  const [splitMethod, setSplitMethod] = useState<'column' | 'row' | 'percentage' | 'size'>('column');
   const [splitColumn, setSplitColumn] = useState<string>('');
   const [rowsPerFile, setRowsPerFile] = useState<number>(100);
   const [splitPercentage, setSplitPercentage] = useState<number>(50);
   const [splitPercentageTarget, setSplitPercentageTarget] = useState<'rows' | 'columns'>('rows');
+  const [maxSizeMB, setMaxSizeMB] = useState<number>(4);
+  const [emailMode, setEmailMode] = useState<boolean>(false);
+  const [sizeSplitStats, setSizeSplitStats] = useState<{ invalidEmails: number; duplicateEmails: number } | null>(null);
 
   const [results, setResults] = useState<ProcessedFile[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -102,82 +121,99 @@ export const MergePanel: React.FC<MergePanelProps> = ({ files }) => {
     setSelectedMergeFileIds(new Set());
   };
 
+  // Unlike handleMerge (which unions every column and keeps full rows, then
+  // lands in Generations History for later download in any format), this
+  // downloads immediately in the format chosen up front — mirroring the
+  // Compare panel's possible-match review export, which the user explicitly
+  // asked to match.
+  const buildMergedColumnResult = (): { data: ExcelRow[]; fileName: string } | null => {
+    const selectedFiles = files.filter(f => selectedMergeFileIds.has(f.id));
+    if (selectedFiles.length < 2) return null;
+
+    const outputName = mergeOutputColumnName.trim() || 'Merged Column';
+    const selections = selectedFiles.map(f => ({
+        data: f.data,
+        column: columnMergeSelections[f.id] || f.columns[0],
+        sourceLabel: f.name,
+    }));
+
+    const data = mergeColumns(selections, outputName, mergeIncludeSourceColumn);
+    const fileName = `Merged_Column_${selectedFiles.length}_Files_${new Date().toLocaleDateString().replace(/\//g, '-')}`;
+    return { data, fileName };
+  };
+
+  const handleMergeColumns = () => {
+    const result = buildMergedColumnResult();
+    if (!result) return;
+    downloadExcelFile(result.data, result.fileName, mergeExportFileFormat);
+  };
+
+  const handleSaveMergedColumn = () => {
+    const result = buildMergedColumnResult();
+    if (!result || !onSaveAsFile) return;
+    onSaveAsFile(result.fileName, result.data);
+  };
+
   const handleSplit = () => {
     if (!activeSplitFile) return;
     setIsProcessing(true);
+    setSizeSplitStats(null);
+
+    const baseName = activeSplitFile.name.substring(0, activeSplitFile.name.lastIndexOf('.')) || activeSplitFile.name;
 
     if (splitMethod === 'column') {
         if (!splitColumn) {
             setIsProcessing(false);
             return;
         }
-        
-        // Group rows by the distinct values in splitColumn
-        const groups: Record<string, ExcelRow[]> = {};
-        
-        activeSplitFile.data.forEach(row => {
-            const rawVal = row[splitColumn];
-            const val = rawVal !== undefined && rawVal !== null && rawVal !== '' ? String(rawVal) : 'Empty_Value';
-            
-            // Remove characters that are illegal in file names
-            const safeVal = val.replace(/[<>:"/\\|?*]/g, '_');
-            
-            if (!groups[safeVal]) {
-                groups[safeVal] = [];
-            }
-            groups[safeVal].push(row);
-        });
 
-        const newResults: ProcessedFile[] = Object.entries(groups).map(([val, groupData]) => {
-            // Create base filename without extension
-            const baseName = activeSplitFile.name.substring(0, activeSplitFile.name.lastIndexOf('.')) || activeSplitFile.name;
-            
-            return {
-                id: crypto.randomUUID(),
-                name: `${baseName}_split_${val}`,
-                data: groupData,
-                columns: activeSplitFile.columns,
-                fileCount: 1,
-                timestamp: new Date(),
-                type: 'split'
-            };
-        });
+        const groups = splitByColumnValue(activeSplitFile.data, splitColumn);
+        const groupEntries = Object.entries(groups);
 
-        // Add all newly created split files
+        if (!guardSplitResultCount(groupEntries.length)) {
+            setIsProcessing(false);
+            return;
+        }
+
+        const newResults: ProcessedFile[] = groupEntries.map(([val, groupData]) => ({
+            id: crypto.randomUUID(),
+            name: `${baseName}_split_${val}`,
+            data: groupData,
+            columns: activeSplitFile.columns,
+            fileCount: 1,
+            timestamp: new Date(),
+            type: 'split'
+        }));
+
         setResults(prev => [...newResults, ...prev]);
     } else if (splitMethod === 'row') {
-        // Split by rows
         if (rowsPerFile <= 0) {
             setIsProcessing(false);
             return;
         }
-        
-        const chunks: ExcelRow[][] = [];
-        for (let i = 0; i < activeSplitFile.data.length; i += rowsPerFile) {
-            chunks.push(activeSplitFile.data.slice(i, i + rowsPerFile));
+
+        const chunks = splitByRowCount(activeSplitFile.data, rowsPerFile);
+
+        if (!guardSplitResultCount(chunks.length)) {
+            setIsProcessing(false);
+            return;
         }
-        
-        const newResults: ProcessedFile[] = chunks.map((chunkData, index) => {
-            const baseName = activeSplitFile.name.substring(0, activeSplitFile.name.lastIndexOf('.')) || activeSplitFile.name;
-            return {
-                id: crypto.randomUUID(),
-                name: `${baseName}_part_${index + 1}`,
-                data: chunkData,
-                columns: activeSplitFile.columns,
-                fileCount: 1,
-                timestamp: new Date(),
-                type: 'split'
-            };
-        });
+
+        const newResults: ProcessedFile[] = chunks.map((chunkData, index) => ({
+            id: crypto.randomUUID(),
+            name: `${baseName}_part_${index + 1}`,
+            data: chunkData,
+            columns: activeSplitFile.columns,
+            fileCount: 1,
+            timestamp: new Date(),
+            type: 'split'
+        }));
         setResults(prev => [...newResults, ...prev]);
     } else if (splitMethod === 'percentage') {
         const pct = Math.min(Math.max(splitPercentage, 1), 99);
-        const baseName = activeSplitFile.name.substring(0, activeSplitFile.name.lastIndexOf('.')) || activeSplitFile.name;
 
         if (splitPercentageTarget === 'rows') {
-            const splitIndex = Math.floor(activeSplitFile.data.length * (pct / 100));
-            const part1 = activeSplitFile.data.slice(0, splitIndex);
-            const part2 = activeSplitFile.data.slice(splitIndex);
+            const [part1, part2] = splitByPercentageRows(activeSplitFile.data, pct);
 
             const result1: ProcessedFile = {
                 id: crypto.randomUUID(),
@@ -200,26 +236,13 @@ export const MergePanel: React.FC<MergePanelProps> = ({ files }) => {
             setResults(prev => [result1, result2, ...prev]);
 
         } else if (splitPercentageTarget === 'columns') {
-            const colSplitIndex = Math.floor(activeSplitFile.columns.length * (pct / 100));
-            const cols1 = activeSplitFile.columns.slice(0, colSplitIndex);
-            const cols2 = activeSplitFile.columns.slice(colSplitIndex);
-
-            const data1 = activeSplitFile.data.map(row => {
-                const newRow: ExcelRow = {};
-                cols1.forEach(c => newRow[c] = row[c]);
-                return newRow;
-            });
-            const data2 = activeSplitFile.data.map(row => {
-                const newRow: ExcelRow = {};
-                cols2.forEach(c => newRow[c] = row[c]);
-                return newRow;
-            });
+            const { columns1, columns2, data1, data2 } = splitByPercentageColumns(activeSplitFile.data, activeSplitFile.columns, pct);
 
             const result1: ProcessedFile = {
                 id: crypto.randomUUID(),
                 name: `${baseName}_part1_${pct}pct_cols`,
                 data: data1,
-                columns: cols1,
+                columns: columns1,
                 fileCount: 1,
                 timestamp: new Date(),
                 type: 'split'
@@ -228,15 +251,44 @@ export const MergePanel: React.FC<MergePanelProps> = ({ files }) => {
                 id: crypto.randomUUID(),
                 name: `${baseName}_part2_${100 - pct}pct_cols`,
                 data: data2,
-                columns: cols2,
+                columns: columns2,
                 fileCount: 1,
                 timestamp: new Date(),
                 type: 'split'
             };
             setResults(prev => [result1, result2, ...prev]);
         }
+    } else if (splitMethod === 'size') {
+        if (maxSizeMB <= 0) {
+            setIsProcessing(false);
+            return;
+        }
+
+        const { chunks, columns: outColumns, invalidEmails, duplicateEmails } = splitBySize(
+            activeSplitFile.data,
+            activeSplitFile.columns,
+            { maxSizeMB, emailMode }
+        );
+
+        if (!guardSplitResultCount(chunks.length)) {
+            setIsProcessing(false);
+            return;
+        }
+
+        setSizeSplitStats({ invalidEmails, duplicateEmails });
+
+        const newResults: ProcessedFile[] = chunks.map((chunkData, index) => ({
+            id: crypto.randomUUID(),
+            name: `${baseName}_part_${index + 1}`,
+            data: chunkData,
+            columns: outColumns,
+            fileCount: 1,
+            timestamp: new Date(),
+            type: 'split'
+        }));
+        setResults(prev => [...newResults, ...prev]);
     }
-    
+
     setIsProcessing(false);
   };
 
@@ -301,6 +353,22 @@ export const MergePanel: React.FC<MergePanelProps> = ({ files }) => {
                         </span>
                     </div>
 
+                    <div className="flex items-center space-x-4 mb-4 text-sm">
+                        <label className="flex items-center space-x-2 text-gray-700 dark:text-gray-300 cursor-pointer">
+                            <input type="radio" checked={mergeTarget === 'rows'} onChange={() => setMergeTarget('rows')} />
+                            <span>Merge Entire Files</span>
+                        </label>
+                        <label className="flex items-center space-x-2 text-gray-700 dark:text-gray-300 cursor-pointer">
+                            <input type="radio" checked={mergeTarget === 'column'} onChange={() => setMergeTarget('column')} />
+                            <span>Merge One Column</span>
+                        </label>
+                    </div>
+                    {mergeTarget === 'column' && (
+                        <p className="text-xs text-gray-500 dark:text-gray-300 mb-4">
+                            Pick one column from each file below — they don't need the same name — and stack their values into a single combined column.
+                        </p>
+                    )}
+
                     <div className="space-y-2 max-h-[350px] overflow-y-auto mb-6 pr-2 custom-scrollbar flex-1">
                         {files.map(file => {
                             const isSelected = selectedMergeFileIds.has(file.id);
@@ -334,34 +402,125 @@ export const MergePanel: React.FC<MergePanelProps> = ({ files }) => {
                         })}
                     </div>
 
-                    {selectedMergeFileIds.size > 0 && (
-                        <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                            <h4 className="text-xs font-bold text-gray-500 dark:text-gray-300 uppercase mb-2 flex items-center">
-                                <TableProperties className="h-3 w-3 mr-1" />
-                                Detected Merge Schema ({currentSelectionHeaders.size} columns)
-                            </h4>
-                            <div className="flex flex-wrap gap-1">
-                                {Array.from(currentSelectionHeaders).slice(0, 10).map(header => (
-                                    <span key={header} className="text-[10px] bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded">
-                                        {header}
-                                    </span>
-                                ))}
-                                {currentSelectionHeaders.size > 10 && (
-                                    <span className="text-[10px] text-gray-400 dark:text-gray-500 py-0.5">+{currentSelectionHeaders.size - 10} more...</span>
+                    {mergeTarget === 'rows' ? (
+                        <>
+                            {selectedMergeFileIds.size > 0 && (
+                                <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                                    <h4 className="text-xs font-bold text-gray-500 dark:text-gray-300 uppercase mb-2 flex items-center">
+                                        <TableProperties className="h-3 w-3 mr-1" />
+                                        Detected Merge Schema ({currentSelectionHeaders.size} columns)
+                                    </h4>
+                                    <div className="flex flex-wrap gap-1">
+                                        {Array.from(currentSelectionHeaders).slice(0, 10).map(header => (
+                                            <span key={header} className="text-[10px] bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded">
+                                                {header}
+                                            </span>
+                                        ))}
+                                        {currentSelectionHeaders.size > 10 && (
+                                            <span className="text-[10px] text-gray-400 dark:text-gray-500 py-0.5">+{currentSelectionHeaders.size - 10} more...</span>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            <Button
+                                onClick={handleMerge}
+                                disabled={selectedMergeFileIds.size < 2 || isProcessing}
+                                className="w-full py-4 rounded-xl shadow-md"
+                                isLoading={isProcessing && mode === 'merge'}
+                            >
+                                <Combine className="h-5 w-5 mr-2" />
+                                Merge {selectedMergeFileIds.size} Files
+                            </Button>
+                        </>
+                    ) : (
+                        <>
+                            {selectedMergeFileIds.size > 0 && (
+                                <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 space-y-3">
+                                    <h4 className="text-xs font-bold text-gray-500 dark:text-gray-300 uppercase mb-1 flex items-center">
+                                        <Columns3 className="h-3 w-3 mr-1" />
+                                        Column per file
+                                    </h4>
+                                    {files.filter(f => selectedMergeFileIds.has(f.id)).map(f => (
+                                        <div key={f.id} className="flex items-center gap-3">
+                                            <span className="text-sm text-gray-700 dark:text-gray-300 truncate flex-1" title={f.name}>{f.name}</span>
+                                            <select
+                                                value={columnMergeSelections[f.id] || f.columns[0] || ''}
+                                                onChange={(e) => setColumnMergeSelections(prev => ({ ...prev, [f.id]: e.target.value }))}
+                                                className="flex-1 p-1.5 text-sm border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                                            >
+                                                {f.columns.map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div className="mb-4">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Output column name</label>
+                                <input
+                                    type="text"
+                                    value={mergeOutputColumnName}
+                                    onChange={(e) => setMergeOutputColumnName(e.target.value)}
+                                    placeholder="Merged Column"
+                                    className="block w-full rounded-md border-gray-300 dark:border-gray-700 border p-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                                />
+                            </div>
+
+                            <div className="mb-4 flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    id="merge-include-source-column"
+                                    checked={mergeIncludeSourceColumn}
+                                    onChange={(e) => setMergeIncludeSourceColumn(e.target.checked)}
+                                    className="rounded border-gray-300 dark:border-gray-700"
+                                />
+                                <label htmlFor="merge-include-source-column" className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                                    Add a "Source File" column showing which file each value came from
+                                </label>
+                            </div>
+
+                            <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                                <span className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">File Format</span>
+                                <div className="flex flex-wrap items-center gap-4">
+                                    <label className="flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                                        <input type="radio" checked={mergeExportFileFormat === 'xlsx'} onChange={() => setMergeExportFileFormat('xlsx')} />
+                                        <span>Excel (.xlsx)</span>
+                                    </label>
+                                    <label className="flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                                        <input type="radio" checked={mergeExportFileFormat === 'csv'} onChange={() => setMergeExportFileFormat('csv')} />
+                                        <span>CSV (.csv)</span>
+                                    </label>
+                                    <label className="flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                                        <input type="radio" checked={mergeExportFileFormat === 'txt'} onChange={() => setMergeExportFileFormat('txt')} />
+                                        <span>Text, tab-delimited (.txt)</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div className="flex gap-3">
+                                <Button
+                                    onClick={handleMergeColumns}
+                                    disabled={selectedMergeFileIds.size < 2}
+                                    className="flex-1 py-4 rounded-xl shadow-md"
+                                >
+                                    <Columns3 className="h-5 w-5 mr-2" />
+                                    Merge Column from {selectedMergeFileIds.size} Files
+                                </Button>
+                                {onSaveAsFile && (
+                                    <Button
+                                        variant="secondary"
+                                        onClick={handleSaveMergedColumn}
+                                        disabled={selectedMergeFileIds.size < 2}
+                                        className="py-4 rounded-xl"
+                                        title="Make this merged column available as a file in File Manager, Compare, etc."
+                                    >
+                                        <Save className="h-5 w-5" />
+                                    </Button>
                                 )}
                             </div>
-                        </div>
+                        </>
                     )}
-
-                    <Button 
-                        onClick={handleMerge} 
-                        disabled={selectedMergeFileIds.size < 2 || isProcessing}
-                        className="w-full py-4 rounded-xl shadow-md shadow-indigo-100"
-                        isLoading={isProcessing && mode === 'merge'}
-                    >
-                        <Combine className="h-5 w-5 mr-2" />
-                        Merge {selectedMergeFileIds.size} Files
-                    </Button>
                 </>
             ) : (
                 // SPLIT UI
@@ -413,6 +572,14 @@ export const MergePanel: React.FC<MergePanelProps> = ({ files }) => {
                                                 onChange={() => setSplitMethod('percentage')}
                                             />
                                             <span>By Percentage</span>
+                                        </label>
+                                        <label className="flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                checked={splitMethod === 'size'}
+                                                onChange={() => setSplitMethod('size')}
+                                            />
+                                            <span>By Max File Size</span>
                                         </label>
                                     </div>
                                 </div>
@@ -479,7 +646,7 @@ export const MergePanel: React.FC<MergePanelProps> = ({ files }) => {
                                             </div>
                                         </div>
                                     </div>
-                                ) : (
+                                ) : splitMethod === 'row' ? (
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">3. Maximum Rows per File</label>
                                         <p className="text-xs text-gray-500 dark:text-gray-300 mb-2">The file will be chunked into parts containing up to this number of rows.</p>
@@ -498,6 +665,46 @@ export const MergePanel: React.FC<MergePanelProps> = ({ files }) => {
                                             </div>
                                         )}
                                     </div>
+                                ) : (
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">3. Maximum Size per File (MB)</label>
+                                            <p className="text-xs text-gray-500 dark:text-gray-300 mb-2">
+                                                The file will be chunked so each part stays under this size, estimated from CSV-serialized byte size
+                                                (an approximation — actual Excel export size can differ slightly).
+                                            </p>
+                                            <input
+                                                type="number"
+                                                value={maxSizeMB}
+                                                min={1}
+                                                max={100}
+                                                step={0.5}
+                                                onChange={(e) => setMaxSizeMB(parseFloat(e.target.value) || 4)}
+                                                className="block w-full rounded-md border-gray-300 dark:border-gray-700 border p-3 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                                            />
+                                        </div>
+
+                                        <label className="flex items-start space-x-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={emailMode}
+                                                onChange={(e) => setEmailMode(e.target.checked)}
+                                                className="mt-0.5 rounded border-gray-300 dark:border-gray-700 text-indigo-600 focus:ring-indigo-500"
+                                            />
+                                            <span>
+                                                Email List Mode — keep only the first column ({activeSplitFile.columns[0] || 'first column'}),
+                                                validate each value as an email address, and remove duplicates (case-insensitive).
+                                            </span>
+                                        </label>
+
+                                        {sizeSplitStats && (
+                                            <div className="p-3 bg-indigo-50 dark:bg-indigo-500/10 rounded-lg border border-indigo-100 dark:border-indigo-500/20 text-sm text-indigo-800 dark:text-indigo-300 shadow-inner">
+                                                {emailMode
+                                                    ? `Last run: ${sizeSplitStats.invalidEmails} invalid and ${sizeSplitStats.duplicateEmails} duplicate email(s) removed before splitting.`
+                                                    : 'Last run complete.'}
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
                             </>
                         )}
@@ -507,11 +714,11 @@ export const MergePanel: React.FC<MergePanelProps> = ({ files }) => {
                         </div>
                     </div>
 
-                    <Button 
-                        onClick={handleSplit} 
+                    <Button
+                        onClick={handleSplit}
                         variant="primary"
-                        disabled={!activeSplitFile || (splitMethod === 'column' && !splitColumn) || (splitMethod === 'row' && rowsPerFile <= 0) || (splitMethod === 'percentage' && (splitPercentage < 1 || splitPercentage > 99)) || isProcessing}
-                        className="w-full py-4 rounded-xl shadow-md shadow-indigo-100 mt-6"
+                        disabled={!activeSplitFile || (splitMethod === 'column' && !splitColumn) || (splitMethod === 'row' && rowsPerFile <= 0) || (splitMethod === 'percentage' && (splitPercentage < 1 || splitPercentage > 99)) || (splitMethod === 'size' && maxSizeMB <= 0) || isProcessing}
+                        className="w-full py-4 rounded-xl shadow-md mt-6"
                         isLoading={isProcessing && mode === 'split'}
                     >
                         <SplitSquareHorizontal className="h-5 w-5 mr-2" />
@@ -572,14 +779,25 @@ export const MergePanel: React.FC<MergePanelProps> = ({ files }) => {
                                             </div>
                                         </div>
                                     </div>
-                                    <ExportMenu
-                                        trigger={
-                                            <button className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors text-gray-500 dark:text-gray-300 flex-shrink-0">
-                                                <MoreVertical className="h-5 w-5" />
+                                    <div className="flex items-center gap-1 flex-shrink-0">
+                                        {onSaveAsFile && (
+                                            <button
+                                                onClick={() => onSaveAsFile(result.name, result.data)}
+                                                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors text-gray-500 dark:text-gray-300"
+                                                title="Make this result available as a file in File Manager, Compare, etc."
+                                            >
+                                                <Save className="h-5 w-5" />
                                             </button>
-                                        }
-                                        onExport={(format) => downloadExcelFile(result.data, result.name, format)}
-                                    />
+                                        )}
+                                        <ExportMenu
+                                            trigger={
+                                                <button className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors text-gray-500 dark:text-gray-300">
+                                                    <MoreVertical className="h-5 w-5" />
+                                                </button>
+                                            }
+                                            onExport={(format) => downloadExcelFile(result.data, result.name, format)}
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         ))}

@@ -172,34 +172,38 @@ The current practice is thin. Match it for consistency, but do not extend it fur
 
 ## Styling
 
-Tailwind utility classes inlined in JSX, loaded from **`cdn.tailwindcss.com`**.
+Tailwind is compiled at **build time** from `tailwind.config.js` (no CDN script, no
+importmap). `index.html` links a real `src/styles/index.css`, which self-hosts Roboto
+and defines the few global rules (focus rings, `prefers-reduced-motion`). **This section
+was out of date** — an earlier version of this doc described a CDN-script, stock-palette
+setup with no dark mode; none of that is true anymore.
 
-This means there is **no `tailwind.config.js`, no PostCSS step and no stylesheet**
-(`index.html` links `/index.css`, which does not exist). Consequences:
+- Classes exist only if `tailwind.config.js` defines them (stock Tailwind) or extends
+  them (the project's additions below). An invented class fails loudly — nothing renders.
+- **Dark mode exists**, class-based (`darkMode: 'class'`, toggled on `<html>`). Most
+  components pair every light class with a `dark:` variant.
 
-- **Only stock Tailwind classes work.** There are no custom tokens, no theme extension and
-  no `@apply`. A class you invent will silently do nothing.
-- **Arbitrary-value syntax is available** (`w-[32rem]`) and is the only escape hatch.
-- There is **no dark mode**. No `dark:` variant is used anywhere and no theme toggle exists.
+The stock Tailwind ramp names (`gray`, `slate`, `indigo`, `blue`, `green`, `red`, `amber`,
+`yellow`) are **redefined in `tailwind.config.js` to the eGENTIC corporate palette** — see
+the long comment block at the top of that file before changing any colour. In short:
+`indigo`/`blue` render as eGENTIC Blue, `gray`/`slate` as the Gray family, `red` resolves
+to the accent Orange and `green` also resolves to Blue (the guide has neither colour), so
+**status is carried by icon + wording, never colour alone**. `boxShadow` utilities
+(`shadow-sm`, `shadow-lg`, etc.) are redefined as flat 1px hairline borders, since the
+guide forbids drop shadows — existing `shadow-*` markup is compliant without rewriting,
+but `shadow-{color}-{n}` tint classes (e.g. `shadow-indigo-100`) are a no-op under this
+scheme and should not be added.
 
-The palette currently in the code is **stock Tailwind, not the eGENTIC brand palette**:
+The real eGENTIC logo lives at `public/brand/egentic-logo.png` (full word + figure mark)
+and `public/brand/egentic-flower.png` (the figure mark alone, cropped square — used as
+the favicon and anywhere only the flower is wanted). `Layout.tsx`'s sidebar header is the
+reference usage.
 
-| Role | Classes in use |
-|---|---|
-| Primary / interactive | `indigo-600`, `indigo-700`, `indigo-50`, `indigo-400` |
-| Surfaces | `bg-white`, `bg-gray-50` |
-| Borders | `border-gray-200`, `border-gray-300` |
-| Text | `text-gray-900`, `text-gray-700`, `text-gray-500`, `text-gray-400` |
-| Destructive | `red-500`, `red-600` |
-| Status | `green-100/600/700`, `amber-600`, `yellow-500`, `blue-100/700` |
-| Chart series | `COLORS` in `ChartPanel` — `#4F46E5 #10B981 #F59E0B #EF4444 #8B5CF6` |
-
-> 🟡 **This conflicts with `eGENTIC-design-guide.md`**, which permits only the corporate
-> palette, forbids drop shadows, and specifies Roboto. The app uses indigo, `shadow-sm` /
-> `shadow-lg` throughout, and the default system font stack. This is a known, unresolved
-> gap — recorded in `project-memory.md` §4. **Do not start converting components to the
-> brand palette piecemeal**; a half-converted UI is worse than a consistent off-brand one.
-> Until that decision is made, **match the surrounding file.**
+A screen-translated type scale (`text-display` / `text-title` / `text-subtitle` /
+`text-body` / `text-small` / `text-micro`, also in `tailwind.config.js`) exists for the
+guide's Headline/Subheadline/Body hierarchy but **is not yet adopted anywhere** — every
+panel still uses plain Tailwind sizes (`text-xs` … `text-3xl`). Known gap, not yet fixed;
+don't treat the custom tokens as unused/removable.
 
 Shape conventions that are consistent and worth matching:
 

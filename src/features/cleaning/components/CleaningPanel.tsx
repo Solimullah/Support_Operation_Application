@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UploadedFile, ExcelRow, CleaningAction, ExportFormat } from '@/types';
 import { Button } from '@/components/ui/Button';
-import { Trash2, Type, Scissors, Wand2, PlusSquare, MinusSquare, Download, ChevronDown, Plus, Play, X, ArrowRight, MoreVertical, FileSpreadsheet, Calculator } from 'lucide-react';
+import { Trash2, Type, Scissors, Wand2, PlusSquare, MinusSquare, Download, ChevronDown, Plus, Play, X, ArrowRight, MoreVertical, FileSpreadsheet, Calculator, Save } from 'lucide-react';
 import { downloadExcelFile } from '@/lib/excel';
 import { ExportMenu } from '@/components/ui/ExportMenu';
 
@@ -10,6 +10,7 @@ interface CleaningPanelProps {
   onUpdateFile: (fileId: string, newData: ExcelRow[]) => void;
   incomingAction?: { fileId: string; action: CleaningAction } | null;
   onActionHandled?: () => void;
+  onSaveAsFile?: (name: string, data: ExcelRow[]) => void;
 }
 
 interface ProcessedResult {
@@ -20,7 +21,7 @@ interface ProcessedResult {
     timestamp: Date;
 }
 
-export const CleaningPanel: React.FC<CleaningPanelProps> = ({ files, onUpdateFile, incomingAction, onActionHandled }) => {
+export const CleaningPanel: React.FC<CleaningPanelProps> = ({ files, onUpdateFile, incomingAction, onActionHandled, onSaveAsFile }) => {
   const [selectedFileId, setSelectedFileId] = useState<string>(files[0]?.id || '');
   const [selectedColumn, setSelectedColumn] = useState<string>('');
 
@@ -450,14 +451,27 @@ export const CleaningPanel: React.FC<CleaningPanelProps> = ({ files, onUpdateFil
                                         </p>
                                     </div>
                                 </div>
-                                <ExportMenu
-                                    trigger={
-                                        <button className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full transition-colors text-gray-500 dark:text-gray-300">
-                                            <MoreVertical className="h-5 w-5" />
-                                        </button>
-                                    }
-                                    onExport={(format) => downloadExcelFile(result.data, result.name, format)}
-                                />
+                                <div className="flex items-center gap-1">
+                                    {onSaveAsFile && (
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => onSaveAsFile(result.name, result.data)}
+                                            title="Make this result available as a file in File Manager, Compare, Merge/Split, etc."
+                                        >
+                                            <Save className="h-4 w-4 mr-1" />
+                                            Save to File Manager
+                                        </Button>
+                                    )}
+                                    <ExportMenu
+                                        trigger={
+                                            <button className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full transition-colors text-gray-500 dark:text-gray-300">
+                                                <MoreVertical className="h-5 w-5" />
+                                            </button>
+                                        }
+                                        onExport={(format) => downloadExcelFile(result.data, result.name, format)}
+                                    />
+                                </div>
                             </div>
                         ))}
                     </div>

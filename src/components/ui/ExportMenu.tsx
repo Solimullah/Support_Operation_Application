@@ -10,15 +10,17 @@ interface ExportMenuProps {
   className?: string;
   variant?: 'primary' | 'secondary' | 'ghost';
   trigger?: React.ReactNode;
+  disabled?: boolean;
 }
 
-export const ExportMenu: React.FC<ExportMenuProps> = ({ 
-  onExport, 
-  label = "Export", 
-  size = "md", 
+export const ExportMenu: React.FC<ExportMenuProps> = ({
+  onExport,
+  label = "Export",
+  size = "md",
   className = "",
   variant = "secondary",
-  trigger
+  trigger,
+  disabled = false
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -36,15 +38,19 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({
   return (
     <div className={`relative inline-block text-left ${className}`} ref={menuRef}>
       {trigger ? (
-        <div onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }} className="cursor-pointer inline-flex">
+        <div
+          onClick={(e) => { if (disabled) return; e.stopPropagation(); setIsOpen(!isOpen); }}
+          className={`inline-flex ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+        >
           {trigger}
         </div>
       ) : (
-        <Button 
-          onClick={() => setIsOpen(!isOpen)} 
-          variant={variant} 
+        <Button
+          onClick={() => setIsOpen(!isOpen)}
+          variant={variant}
           size={size}
           className="flex items-center"
+          disabled={disabled}
         >
           <Download className="h-4 w-4 mr-2" />
           {label}

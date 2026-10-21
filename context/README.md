@@ -3,7 +3,7 @@
 Working documentation for this repository. Written for AI agents (Claude Code, Copilot,
 Cursor) and for anyone new to the codebase.
 
-Verified against the code on **2026-08-25**.
+Verified against the code on **2026-09-23**.
 
 ---
 
@@ -15,11 +15,12 @@ Verified against the code on **2026-08-25**.
 | 2 | [`architecture.md`](architecture.md) | **Always.** Where things live and why. |
 | 3 | [`coding-conventions.md`](coding-conventions.md) | Before writing any code. |
 | 4 | [`features-functionalities.md`](features-functionalities.md) | Before building anything — so you don't rebuild what exists, and so you know the known gaps. |
-| 5 | [`agent-rules.md`](agent-rules.md) | **Always, if you are an agent.** How to work here. |
-| 6 | [`business-overview.md`](business-overview.md) | For product-behaviour decisions. |
-| 7 | `project-memory.md` | Preferences, decisions and open threads not recoverable from the code. **Not in version control** - see below. |
-| 8 | [`eGENTIC-design-guide.md`](eGENTIC-design-guide.md) | For anything visual. Corporate brand document. |
-| 9 | [`presentation-brief.md`](presentation-brief.md) | Only when producing a deck or a written description of the app. |
+| 5 | [`algorithms.md`](algorithms.md) | Before touching any feature's core logic — the *how*, not just the *what*. |
+| 6 | [`agent-rules.md`](agent-rules.md) | **Always, if you are an agent.** How to work here. |
+| 7 | [`business-overview.md`](business-overview.md) | For product-behaviour decisions. |
+| 8 | `project-memory.md` | Preferences, decisions and open threads not recoverable from the code. **Not in version control** - see below. |
+| 9 | [`eGENTIC-design-guide.md`](eGENTIC-design-guide.md) | For anything visual. Corporate brand document. |
+| 10 | [`presentation-brief.md`](presentation-brief.md) | Only when producing a deck or a written description of the app. |
 
 `Logo Dark Screens 02@3x.png` is the eGENTIC logo, light-on-dark colourway. It is **not
 currently used by the application** — see `project-memory.md` §4 (local only).

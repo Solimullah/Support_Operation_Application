@@ -16,6 +16,11 @@ import {
   Moon
 } from 'lucide-react';
 
+// The guide (context/eGENTIC-design-guide.md) says this 2-colour mark shouldn't
+// appear on dark backgrounds, and there's no reversed/white variant available yet
+// — used in both themes anyway per explicit product decision until one exists.
+const EGENTIC_LOGO_SRC = '/brand/egentic-logo.png';
+
 interface LayoutProps {
   children: ReactNode;
   activeTab: AppTab;
@@ -57,9 +62,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
       {/* Sidebar */}
       <aside className="w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex-shrink-0 fixed h-full z-10">
         <div className="h-16 flex items-center justify-between px-6 border-b border-gray-200 dark:border-gray-800">
-          <div className="flex items-center">
-            <FileSpreadsheet className="h-8 w-8 text-indigo-600 dark:text-indigo-400" />
-            <span className="ml-2 text-xl font-bold text-gray-900 dark:text-gray-100">Workbench</span>
+          <div className="flex items-center gap-2 min-w-0">
+            <img src={EGENTIC_LOGO_SRC} alt="eGENTIC Lead Generation" className="h-3.5 w-auto flex-shrink-0" />
+            <div className="flex flex-col justify-center min-w-0 leading-tight">
+              <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 truncate">Sales Support</span>
+              <span className="text-sm font-bold text-gray-900 dark:text-gray-100 truncate">Workbench</span>
+            </div>
           </div>
           <button
             onClick={onToggleTheme}
@@ -124,35 +132,35 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
             tab={AppTab.EXTRA_COUNTER}
             active={activeTab === AppTab.EXTRA_COUNTER}
             icon={Hash}
-            label={EXTRA_TOOLS[0].name}
+            label="SNTS-Counter"
             onClick={onTabChange}
           />
           <NavItem
             tab={AppTab.EXTRA_SPLITTER}
             active={activeTab === AppTab.EXTRA_SPLITTER}
             icon={Scissors}
-            label={EXTRA_TOOLS[1].name}
+            label={EXTRA_TOOLS[0].name}
             onClick={onTabChange}
           />
           <NavItem
             tab={AppTab.EXTRA_COMBINER}
             active={activeTab === AppTab.EXTRA_COMBINER}
             icon={Layers}
-            label={EXTRA_TOOLS[2].name}
+            label={EXTRA_TOOLS[1].name}
             onClick={onTabChange}
           />
           <NavItem
             tab={AppTab.EXTRA_EGT_LOGGER}
             active={activeTab === AppTab.EXTRA_EGT_LOGGER}
             icon={ClipboardList}
-            label={EXTRA_TOOLS[3].name}
+            label={EXTRA_TOOLS[2].name}
             onClick={onTabChange}
           />
           <NavItem
-            tab={AppTab.EXTRA_SMART_LOOKUP}
-            active={activeTab === AppTab.EXTRA_SMART_LOOKUP}
+            tab={AppTab.EXTRA_VLOOKUP}
+            active={activeTab === AppTab.EXTRA_VLOOKUP}
             icon={ScanSearch}
-            label={EXTRA_TOOLS[4].name}
+            label={EXTRA_TOOLS[3].name}
             onClick={onTabChange}
           />
         </div>

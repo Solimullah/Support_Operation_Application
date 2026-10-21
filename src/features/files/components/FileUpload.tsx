@@ -136,7 +136,14 @@ export const FileUpload: React.FC<FileUploadProps> = ({ files, onFilesSelect, on
                                 )}
                             </div>
                             <div>
-                                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{file.name}</p>
+                                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                                    {file.name}
+                                    {file.isGenerated && (
+                                        <span className="text-[10px] font-semibold uppercase tracking-wide bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20 px-1.5 py-0.5 rounded">
+                                            Generated
+                                        </span>
+                                    )}
+                                </p>
                                 <p className="text-xs text-gray-500 dark:text-gray-300">{file.data.length} rows, {file.columns.length} columns</p>
                             </div>
                         </div>

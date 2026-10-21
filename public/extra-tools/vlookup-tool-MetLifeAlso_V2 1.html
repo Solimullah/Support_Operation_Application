@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Match & Fill — spreadsheet lookup tool</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --ink:#1a2420;
+    --paper:#f6f4ee;
+    --panel:#ffffff;
+    --line:#dcd7c9;
+    --moss:#3f5d4c;
+    --moss-deep:#2c4335;
+    --rust:#b5602f;
+    --amber:#c98a2c;
+    --muted:#6b7268;
+    --good:#3f5d4c;
+    --bad:#b5402f;
+    --mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  html,body{
+    margin:0; padding:0;
+    background:
+      radial-gradient(ellipse at top left, rgba(63,93,76,0.06), transparent 55%),
+      var(--paper);
+    color:var(--ink);
+    font-family:var(--sans);
+    min-height:100vh;
+  }
+  .wrap{
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+  header{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:16px;
+    margin-bottom: 32px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 20px;
+  }
+  .brand{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+  }
+  .brand .mark{
+    width:14px; height:14px;
+    background: var(--moss);
+    border-radius: 3px;
+    transform: rotate(45deg);
+    display:inline-block;
+  }
+  h1{
+    font-size: 1.35rem;
+    margin:0;
+    letter-spacing: -0.01em;
+    font-weight: 650;
+  }
+  .tag{
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .step{
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 22px 24px;
+    margin-bottom: 18px;
+    position: relative;
+  }
+  .step.disabled{
+    opacity: 0.45;
+    pointer-events: none;
+  }
+  .step-head{
+    display:flex;
+    align-items:center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .step-num{
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--moss);
+    background: rgba(63,93,76,0.1);
+    border: 1px solid rgba(63,93,76,0.25);
+    width: 22px; height:22px;
+    border-radius: 50%;
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+  }
+  .step-title{
+    font-weight: 600;
+    font-size: 0.98rem;
+  }
+  .step-sub{
+    font-size: 0.82rem;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .drop-row{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 720px){ .drop-row{ grid-template-columns: 1fr; } }
+
+  .dropzone{
+    border: 1.5px dashed var(--line);
+    border-radius: 8px;
+    padding: 20px;
+    text-align:center;
+    cursor:pointer;
+    transition: border-color 0.15s, background 0.15s;
+    background: #fdfcfa;
+  }
+  .dropzone:hover, .dropzone.drag{
+    border-color: var(--moss);
+    background: rgba(63,93,76,0.05);
+  }
+  .dropzone input{ display:none; }
+  .dz-icon{
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--moss);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 6px;
+  }
+  .dz-name{
+    font-weight: 600;
+    font-size: 0.88rem;
+    word-break: break-all;
+  }
+  .dz-meta{
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+  .dz-placeholder{ color: var(--muted); font-size: 0.85rem; }
+
+  .file-controls{
+    display:none;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--line);
+    text-align: left;
+  }
+  .file-controls.show{ display:block; }
+  .fc-row{
+    display:flex;
+    gap: 10px;
+    align-items:flex-end;
+  }
+  .fc-field{ flex:1; }
+  .fc-field.narrow{ flex: 0 0 110px; }
+
+  label.field-label{
+    display:block;
+    font-size: 0.76rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 14px 0 6px;
+  }
+  label.field-label.tight{ margin-top:0; }
+  select, input[type=text], input[type=number]{
+    width:100%;
+    padding: 9px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: #fff;
+    font-family: var(--sans);
+    font-size: 0.92rem;
+    color: var(--ink);
+  }
+  select:disabled{ color: var(--muted); background:#f2f0ea; }
+  .hint{
+    font-size: 0.74rem;
+    color: var(--amber);
+    margin-top: 6px;
+    display:none;
+  }
+  .hint.show{ display:block; }
+
+  .col-grid{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 4px;
+  }
+  @media (max-width: 720px){ .col-grid{ grid-template-columns: 1fr; } }
+  .col-panel{
+    border-left: 2px solid var(--line);
+    padding-left: 14px;
+  }
+  .col-panel .panel-title{
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--rust);
+    margin-bottom: 2px;
+  }
+
+  .preview{
+    margin-top: 16px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: auto;
+    max-height: 240px;
+  }
+  table{
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 0.8rem;
+  }
+  th, td{
+    text-align: left;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  th{
+    background: #f0eee5;
+    position: sticky;
+    top:0;
+    font-weight: 600;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+  tr:nth-child(even) td{ background: rgba(0,0,0,0.015); }
+  tr.header-row-marker td{
+    background: rgba(63,93,76,0.12) !important;
+    font-weight:600;
+  }
+  td.row-num, th.row-num{
+    font-family: var(--mono);
+    color: var(--muted);
+    background: #f0eee5 !important;
+    text-align:right;
+    position:sticky; left:0;
+  }
+
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    background: var(--moss);
+    color: #fdfcfa;
+    border:none;
+    padding: 12px 22px;
+    border-radius: 7px;
+    font-weight: 600;
+    font-size: 0.92rem;
+    cursor:pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .btn:hover{ background: var(--moss-deep); }
+  .btn:active{ transform: scale(0.98); }
+  .btn:disabled{
+    background: var(--line);
+    color: var(--muted);
+    cursor: not-allowed;
+  }
+  .btn.secondary{
+    background: transparent;
+    color: var(--moss);
+    border: 1.5px solid var(--moss);
+  }
+  .btn.secondary:hover{ background: rgba(63,93,76,0.08); }
+  .btn.small{
+    padding: 7px 14px;
+    font-size: 0.8rem;
+  }
+
+  .action-row{
+    display:flex;
+    align-items:center;
+    gap: 14px;
+    margin-top: 22px;
+    flex-wrap: wrap;
+  }
+
+  .results{
+    display:none;
+  }
+  .stat-row{
+    display:flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  .stat{
+    background: #fdfcfa;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 18px;
+    flex: 1;
+    min-width: 140px;
+  }
+  .stat .num{
+    font-family: var(--mono);
+    font-size: 1.6rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .stat.good .num{ color: var(--good); }
+  .stat.bad .num{ color: var(--bad); }
+  .stat .lbl{
+    font-size: 0.74rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 6px;
+  }
+
+  .unmatched-box{
+    margin-top: 14px;
+  }
+  .unmatched-box summary{
+    cursor:pointer;
+    font-size: 0.85rem;
+    color: var(--rust);
+    font-weight: 600;
+  }
+  .unmatched-list{
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-top: 8px;
+    max-height: 140px;
+    overflow:auto;
+    background: #fdfcfa;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+
+  .note{
+    font-size: 0.8rem;
+    color: var(--muted);
+    line-height:1.5;
+    margin-top: 10px;
+  }
+  .note b{ color: var(--ink); }
+
+  .status-badge{
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: rgba(63,93,76,0.12);
+    color: var(--moss-deep);
+    margin-left: auto;
+  }
+
+  footer{
+    text-align:center;
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 40px;
+  }
+
+  .checkbox-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-top:14px;
+    font-size: 0.85rem;
+  }
+  .checkbox-row input{ accent-color: var(--moss); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <span class="mark"></span>
+      <div>
+        <h1>Match &amp; Fill</h1>
+        <div class="tag">spreadsheet lookup tool</div>
+      </div>
+    </div>
+    <span class="tag" style="align-self:center;">runs locally in your browser · nothing uploaded</span>
+  </header>
+
+  <!-- STEP 1: FILES -->
+  <div class="step" id="step1">
+    <div class="step-head">
+      <span class="step-num">1</span>
+      <div>
+        <div class="step-title">Load your two files</div>
+        <div class="step-sub">The reference file holds the values you want to pull in. The target file is the one that needs filling in. Multi-sheet workbooks and headers that don't start on row 1 are both fine — you'll confirm both below.</div>
+      </div>
+    </div>
+
+    <div class="drop-row">
+      <div>
+        <div class="dropzone" id="dz-ref">
+          <input type="file" id="file-ref" accept=".xlsx,.xls,.csv">
+          <div class="dz-icon">reference file</div>
+          <div id="dz-ref-content" class="dz-placeholder">Click or drop file — the one with the data to look up</div>
+        </div>
+        <div class="file-controls" id="fc-ref">
+          <div class="fc-row">
+            <div class="fc-field">
+              <label class="field-label tight">Sheet</label>
+              <select id="ref-sheet"></select>
+            </div>
+            <div class="fc-field narrow">
+              <label class="field-label tight">Header row</label>
+              <input type="number" id="ref-header-row" min="1" value="1">
+            </div>
+          </div>
+          <div class="hint" id="ref-hint">Header row auto-detected — double check it's right below.</div>
+        </div>
+      </div>
+      <div>
+        <div class="dropzone" id="dz-target">
+          <input type="file" id="file-target" accept=".xlsx,.xls,.csv">
+          <div class="dz-icon">target file</div>
+          <div id="dz-target-content" class="dz-placeholder">Click or drop file — the one you need to fill in</div>
+        </div>
+        <div class="file-controls" id="fc-target">
+          <div class="fc-row">
+            <div class="fc-field">
+              <label class="field-label tight">Sheet</label>
+              <select id="target-sheet"></select>
+            </div>
+            <div class="fc-field narrow">
+              <label class="field-label tight">Header row</label>
+              <input type="number" id="target-header-row" min="1" value="1">
+            </div>
+          </div>
+          <div class="hint" id="target-hint">Header row auto-detected — double check it's right below.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="preview" id="raw-preview-wrap" style="display:none; margin-top:18px;">
+      <table id="raw-preview"></table>
+    </div>
+    <div class="note" id="raw-preview-note" style="display:none;">The highlighted row is what will be used as the header. Change the "Header row" number above if it picked the wrong one.</div>
+  </div>
+
+  <!-- STEP 2: COLUMNS -->
+  <div class="step disabled" id="step2">
+    <div class="step-head">
+      <span class="step-num">2</span>
+      <div>
+        <div class="step-title">Choose the columns</div>
+        <div class="step-sub">Headers don't need to match, column order doesn't matter — pick them by what they actually contain.</div>
+      </div>
+      <span class="status-badge" id="sheet-badges"></span>
+    </div>
+
+    <div class="col-grid">
+      <div class="col-panel">
+        <div class="panel-title">Reference file</div>
+        <label class="field-label">Key column (to match on)</label>
+        <select id="ref-key" disabled></select>
+        <label class="field-label">Value column (to pull in)</label>
+        <select id="ref-value" disabled></select>
+      </div>
+      <div class="col-panel">
+        <div class="panel-title">Target file</div>
+        <label class="field-label">Key column (to match on)</label>
+        <select id="target-key" disabled></select>
+        <label class="field-label">Output column (will be filled)</label>
+        <select id="target-output" disabled></select>
+        <div class="checkbox-row">
+          <input type="checkbox" id="overwrite-existing" checked>
+          <label for="overwrite-existing">Overwrite existing values in this column</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">Tip: if the output column doesn't exist yet, choose <b>"+ Add new column…"</b> from the target dropdown and name it.</div>
+    <div id="new-col-wrap" style="display:none;">
+      <label class="field-label">New column name</label>
+      <input type="text" id="new-col-name" placeholder="outcome">
+    </div>
+
+    <div class="action-row">
+      <button class="btn" id="run-btn" disabled>Run match</button>
+      <button class="btn secondary" id="preview-btn" disabled>Preview data</button>
+    </div>
+  </div>
+
+  <!-- PREVIEW -->
+  <div class="step" id="step-preview" style="display:none;">
+    <div class="step-head">
+      <span class="step-num">👁</span>
+      <div>
+        <div class="step-title">Data preview</div>
+        <div class="step-sub" id="preview-sub">First few rows of each file, using the header row you selected</div>
+      </div>
+    </div>
+    <div class="col-grid">
+      <div class="col-panel">
+        <div class="panel-title">Reference</div>
+        <div class="preview"><table id="preview-ref"></table></div>
+      </div>
+      <div class="col-panel">
+        <div class="panel-title">Target</div>
+        <div class="preview"><table id="preview-target"></table></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESULTS -->
+  <div class="step results" id="step3">
+    <div class="step-head">
+      <span class="step-num">3</span>
+      <div>
+        <div class="step-title">Results</div>
+        <div class="step-sub">Review the match, then download the filled file</div>
+      </div>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat"><div class="num" id="stat-total">0</div><div class="lbl">rows in target</div></div>
+      <div class="stat good"><div class="num" id="stat-matched">0</div><div class="lbl">matched</div></div>
+      <div class="stat bad"><div class="num" id="stat-unmatched">0</div><div class="lbl">no match found</div></div>
+    </div>
+
+    <details class="unmatched-box" id="unmatched-details" style="display:none;">
+      <summary>Show unmatched keys</summary>
+      <div class="unmatched-list" id="unmatched-list"></div>
+    </details>
+
+    <div class="preview" style="margin-top:18px;"><table id="preview-result"></table></div>
+
+    <div class="action-row">
+      <button class="btn" id="download-btn">Download as Excel (.xlsx)</button>
+      <button class="btn secondary" id="download-csv-btn">Download as CSV</button>
+      <button class="btn secondary" id="reset-btn">Start over</button>
+    </div>
+  </div>
+
+  <footer>Everything happens in your browser — files are never sent anywhere.</footer>
+</div>
+
+<script>
+(function(){
+  // full workbooks + selection state
+  const state = {
+    ref:    { wb:null, sheetName:null, rawRows:null, headerRowIdx:0, headers:null, rows:null, filename:null },
+    target: { wb:null, sheetName:null, rawRows:null, headerRowIdx:0, headers:null, rows:null, filename:null }
+  };
+  let resultRows=null, resultHeaders=null, outBaseName='filled';
+
+  const $ = id => document.getElementById(id);
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // Sniffs the field delimiter from the first line — semicolon-delimited
+  // exports are common (especially from EU/Spanish-locale systems), and a
+  // hardcoded comma would glue an entire semicolon-delimited row into one
+  // column, exactly like a real comma inside a quoted field would.
+  function detectDelimiter(text){
+    const firstLine = (text.split(/\r\n|\r|\n/)[0]) || '';
+    const candidates = [',', ';', '\t'];
+    let best = ',', bestCount = 0;
+    candidates.forEach(d=>{
+      const count = firstLine.split(d).length - 1;
+      if(count > bestCount){ bestCount = count; best = d; }
+    });
+    return best;
+  }
+
+  // Minimal CSV parser (handles quoted fields, escaped quotes, CRLF/LF).
+  // We deliberately do NOT use XLSX's built-in CSV ingestion: it silently
+  // guesses at dates/numbers using US (MM/DD) conventions, which corrupts
+  // ambiguous dates like "01/02/2026" (is that Jan 2 or Feb 1?) without any
+  // warning. Parsing manually means every value is kept exactly as typed
+  // unless it is unambiguously a plain number.
+  function parseCsvText(text){
+    const delim = detectDelimiter(text);
+    const rows = [];
+    let row = [], field = '', inQuotes = false;
+    text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    for(let i=0;i<text.length;i++){
+      const ch = text[i];
+      if(inQuotes){
+        if(ch === '"'){
+          if(text[i+1] === '"'){ field += '"'; i++; }
+          else inQuotes = false;
+        } else field += ch;
+      } else {
+        if(ch === '"') inQuotes = true;
+        else if(ch === delim){ row.push(field); field=''; }
+        else if(ch === '\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+        else field += ch;
+      }
+    }
+    row.push(field);
+    rows.push(row);
+    if(rows.length && rows[rows.length-1].length===1 && rows[rows.length-1][0]==='') rows.pop();
+    // only coerce to a number when the WHOLE trimmed field is an unambiguous
+    // plain number — never touch anything date-like or locale-formatted
+    const numRe = /^-?\d+(\.\d+)?$/;
+    return rows.map(r=>r.map(v=>{
+      const t = v.trim();
+      if(t==='') return null;
+      return numRe.test(t) ? Number(t) : v;
+    }));
+  }
+
+  // is this cell's number format actually a date/time format?
+  function isDateFormat(z){
+    if(!z) return false;
+    if(typeof XLSX.SSF!=='undefined' && XLSX.SSF.is_date){ try{ return XLSX.SSF.is_date(z); }catch(e){} }
+    return /[hHmMdDyYsS]/.test(z) && !/^General$/i.test(z);
+  }
+
+  function readWorkbook(file, cb){
+    const isCsv = /\.csv$/i.test(file.name);
+    const reader = new FileReader();
+    reader.onload = function(e){
+      if(isCsv){
+        const text = new TextDecoder('utf-8').decode(new Uint8Array(e.target.result));
+        const rows = parseCsvText(text);
+        // wrap in a workbook-shaped object so the rest of the app doesn't
+        // need to know CSV was handled differently
+        cb({ SheetNames:['Sheet1'], Sheets:{ Sheet1: { __csvRows: rows } } });
+      } else {
+        const data = new Uint8Array(e.target.result);
+        // cellDates intentionally left off — we pull the source file's own
+        // formatted date text (cell.w) ourselves in sheetToRows below, which
+        // preserves its original format instead of swapping in a default one
+        const wb = XLSX.read(data, {type:'array', cellNF:true});
+        cb(wb);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function sheetToRows(wb, sheetName){
+    const ws = wb.Sheets[sheetName];
+    if(ws && ws.__csvRows) return ws.__csvRows;
+    if(!ws || !ws['!ref']) return [];
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    const rows = [];
+    for(let r=range.s.r; r<=range.e.r; r++){
+      const row = [];
+      for(let c=range.s.c; c<=range.e.c; c++){
+        const cell = ws[XLSX.utils.encode_cell({r,c})];
+        if(!cell){ row.push(null); continue; }
+        if(isDateFormat(cell.z)){
+          // keep the exact formatted text the source file displays
+          // (e.g. "01/02/2026" in whatever format that workbook used)
+          row.push(cell.w !== undefined ? cell.w : cell.v);
+        } else {
+          row.push(cell.v !== undefined ? cell.v : null);
+        }
+      }
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  // what fraction of a row's non-blank cells look like text labels rather
+  // than numbers/ids — real header rows are almost always mostly text,
+  // while data rows are usually dominated by numeric/id values
+  function textiness(row){
+    let textish=0, total=0;
+    row.forEach(v=>{
+      if(v===null||v===undefined||v==='') return;
+      total++;
+      if(typeof v === 'number') return;
+      const s = String(v).trim();
+      if(s!=='' && isNaN(Number(s.replace(/,/g,'')))) textish++;
+    });
+    return total>0 ? textish/total : 0;
+  }
+
+  // guesses which row is the true header row by finding the row whose
+  // populated columns stay densely filled for many rows below it, weighted
+  // toward rows that actually look like column labels (text) rather than
+  // data (numbers). Without the text weighting, a data row sitting right
+  // below the real header can outscore it whenever the header has even one
+  // column that isn't densely filled below (e.g. an optional/blank field) —
+  // that row then gets used as the "header" and silently drops out of the
+  // output, which looks like the first data row went missing.
+  function guessHeaderRow(rawRows){
+    const maxCheck = Math.min(20, rawRows.length);
+    const lookahead = 15;
+    let best = 0, bestScore = -1;
+    for(let i=0;i<maxCheck;i++){
+      const row = rawRows[i]||[];
+      const cols = [];
+      row.forEach((v,idx)=>{ if(v!==null&&v!==undefined&&v!=='') cols.push(idx); });
+      if(cols.length===0) continue;
+      const end = Math.min(rawRows.length, i+1+lookahead);
+      let filled=0, total=0;
+      for(let j=i+1;j<end;j++){
+        cols.forEach(c=>{
+          total++;
+          const v = (rawRows[j]||[])[c];
+          if(v!==null&&v!==undefined&&v!=='') filled++;
+        });
+      }
+      const fillRate = total>0 ? filled/total : 0;
+      const textRatio = textiness(row);
+      const score = fillRate * cols.length * (0.25 + 0.75*textRatio);
+      if(score>bestScore){ bestScore=score; best=i; }
+    }
+    return best;
+  }
+
+  function computeHeaders(rawRows, headerRowIdx){
+    const headerRow = rawRows[headerRowIdx] || [];
+    const seen = {};
+    return headerRow.map((h,i)=>{
+      let name = (h===null||h===undefined||h==='') ? '(column '+(i+1)+')' : String(h).trim();
+      if(seen[name]!==undefined){
+        seen[name]++;
+        name = name + ' ('+seen[name]+')';
+      } else {
+        seen[name] = 0;
+      }
+      return name;
+    });
+  }
+
+  function refreshDerivedData(which){
+    const s = state[which];
+    if(!s.rawRows) return;
+    const maxRow = s.rawRows.length;
+    const input = $(which+'-header-row');
+    input.max = maxRow;
+    let hIdx = Math.round(parseFloat(input.value)) - 1;
+    if(isNaN(hIdx) || hIdx<0) hIdx = 0;
+    if(hIdx>maxRow-1) hIdx = maxRow-1;
+    s.headerRowIdx = hIdx;
+    s.headers = computeHeaders(s.rawRows, hIdx);
+    s.rows = [s.headers].concat(s.rawRows.slice(hIdx+1));
+    renderRawPreview(which);
+    tryEnableStep2();
+  }
+
+  function populateSheetSelect(which){
+    const s = state[which];
+    const sel = $(which+'-sheet');
+    sel.innerHTML = '';
+    s.wb.SheetNames.forEach(name=>{
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      sel.appendChild(opt);
+    });
+    sel.value = s.sheetName;
+  }
+
+  function loadSheet(which, sheetName){
+    const s = state[which];
+    s.sheetName = sheetName;
+    s.rawRows = sheetToRows(s.wb, sheetName);
+    const guess = guessHeaderRow(s.rawRows);
+    $(which+'-header-row').value = guess+1;
+    const hint = $(which+'-hint');
+    hint.classList.add('show');
+    // extra safety net: if the row we picked doesn't actually look like
+    // column labels (mostly text), warn loudly instead of a passive hint —
+    // this is the exact signature of a data row getting mistaken for the
+    // header, which then vanishes from the output.
+    const guessedRow = s.rawRows[guess] || [];
+    if(textiness(guessedRow) < 0.5){
+      hint.textContent = '⚠ Auto-detected row '+(guess+1)+' looks like it may be data, not headers — please check the preview below and correct the row number if needed.';
+      hint.style.color = 'var(--bad)';
+    } else {
+      hint.textContent = "Header row auto-detected — double check it's right below.";
+      hint.style.color = '';
+    }
+    refreshDerivedData(which);
+  }
+
+  function setupDropzone(which, dzId, inputId, contentId){
+    const dz = $(dzId), input = $(inputId), content = $(contentId);
+    dz.addEventListener('click', ()=> input.click());
+    dz.addEventListener('dragover', e=>{ e.preventDefault(); dz.classList.add('drag'); });
+    dz.addEventListener('dragleave', ()=> dz.classList.remove('drag'));
+    dz.addEventListener('drop', e=>{
+      e.preventDefault(); dz.classList.remove('drag');
+      if(e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+    input.addEventListener('change', e=>{
+      if(e.target.files.length) handleFile(e.target.files[0]);
+    });
+    function handleFile(file){
+      content.innerHTML = '<div class="dz-name">'+escapeHtml(file.name)+'</div><div class="dz-meta">loading…</div>';
+      state[which].filename = file.name;
+      readWorkbook(file, (wb)=>{
+        state[which].wb = wb;
+        const sheetCount = wb.SheetNames.length;
+        content.innerHTML = '<div class="dz-name">'+escapeHtml(file.name)+'</div><div class="dz-meta">'+sheetCount+' sheet'+(sheetCount>1?'s':'')+' found</div>';
+        $('fc-'+which).classList.add('show');
+        populateSheetSelect(which);
+        loadSheet(which, wb.SheetNames[0]);
+      });
+    }
+  }
+
+  $('ref-sheet').addEventListener('change', e=> loadSheet('ref', e.target.value));
+  $('target-sheet').addEventListener('change', e=> loadSheet('target', e.target.value));
+  $('ref-header-row').addEventListener('input', ()=> refreshDerivedData('ref'));
+  $('target-header-row').addEventListener('input', ()=> refreshDerivedData('target'));
+
+  function colLetter(i){
+    let s='';
+    i++;
+    while(i>0){ const m=(i-1)%26; s=String.fromCharCode(65+m)+s; i=Math.floor((i-1)/26); }
+    return s;
+  }
+
+  let lastPreviewWhich = null;
+
+  function renderRawPreview(which){
+    // show a small raw preview for whichever file was most recently touched,
+    // highlighting the chosen header row, to help users sanity-check their pick
+    if(which) lastPreviewWhich = which;
+    which = lastPreviewWhich;
+    if(!which) return;
+    const s = state[which];
+    if(!s.rawRows) return;
+    const maxCols = Math.max(...s.rawRows.slice(0, 12).map(r=>r.length), 1);
+    const maxRows = Math.min(12, s.rawRows.length);
+    let html = '<thead><tr><th class="row-num">#</th>';
+    for(let c=0;c<maxCols;c++) html += '<th>'+colLetter(c)+'</th>';
+    html += '</tr></thead><tbody>';
+    for(let r=0;r<maxRows;r++){
+      const isHeader = r===s.headerRowIdx;
+      html += '<tr'+(isHeader?' class="header-row-marker"':'')+'><td class="row-num">'+(r+1)+'</td>';
+      for(let c=0;c<maxCols;c++){
+        const v = (s.rawRows[r]||[])[c];
+        html += '<td>'+escapeHtml(v===null||v===undefined?'':v)+'</td>';
+      }
+      html += '</tr>';
+    }
+    html += '</tbody>';
+    $('raw-preview').innerHTML = html;
+    $('raw-preview-wrap').style.display = 'block';
+    $('raw-preview-note').style.display = 'block';
+  }
+
+  function populateSelect(sel, headers, opts){
+    sel.innerHTML = '';
+    headers.forEach((h,i)=>{
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = colLetter(i)+' — '+h;
+      sel.appendChild(opt);
+    });
+    if(opts && opts.addNew){
+      const opt = document.createElement('option');
+      opt.value = '__new__';
+      opt.textContent = '+ Add new column…';
+      sel.appendChild(opt);
+    }
+    sel.disabled = false;
+  }
+
+  function tryEnableStep2(){
+    if(state.ref.rows && state.target.rows){
+      $('step2').classList.remove('disabled');
+      populateSelect($('ref-key'), state.ref.headers);
+      populateSelect($('ref-value'), state.ref.headers);
+      populateSelect($('target-key'), state.target.headers);
+      populateSelect($('target-output'), state.target.headers, {addNew:true});
+      $('ref-value').value = state.ref.headers.length>1 ? 1 : 0;
+      $('target-output').value = state.target.headers.length>1 ? 1 : 0;
+      $('sheet-badges').textContent = 'ref: "'+state.ref.sheetName+'" row '+(state.ref.headerRowIdx+1)+'  ·  target: "'+state.target.sheetName+'" row '+(state.target.headerRowIdx+1);
+      $('run-btn').disabled = false;
+      $('preview-btn').disabled = false;
+    }
+  }
+
+  setupDropzone('ref','dz-ref','file-ref','dz-ref-content');
+  setupDropzone('target','dz-target','file-target','dz-target-content');
+
+  $('target-output').addEventListener('change', e=>{
+    $('new-col-wrap').style.display = e.target.value === '__new__' ? 'block' : 'none';
+  });
+
+  function renderPreviewTable(tableEl, rows, headers, maxRows){
+    let html = '<thead><tr>' + headers.map(h=>'<th>'+escapeHtml(h)+'</th>').join('') + '</tr></thead><tbody>';
+    for(let r=1; r<Math.min(rows.length, maxRows+1); r++){
+      html += '<tr>' + headers.map((_,i)=> '<td>'+escapeHtml(rows[r][i]===null||rows[r][i]===undefined?'':rows[r][i])+'</td>').join('') + '</tr>';
+    }
+    html += '</tbody>';
+    tableEl.innerHTML = html;
+  }
+
+  $('preview-btn').addEventListener('click', ()=>{
+    $('step-preview').style.display = 'block';
+    renderPreviewTable($('preview-ref'), state.ref.rows, state.ref.headers, 8);
+    renderPreviewTable($('preview-target'), state.target.rows, state.target.headers, 8);
+    $('step-preview').scrollIntoView({behavior:'smooth', block:'nearest'});
+  });
+
+  function normKey(v){
+    if(v===null||v===undefined) return '';
+    if(v instanceof Date) return v.toISOString();
+    return String(v).trim();
+  }
+
+  $('run-btn').addEventListener('click', ()=>{
+    const refKeyIdx = parseInt($('ref-key').value);
+    const refValIdx = parseInt($('ref-value').value);
+    const targetKeyIdx = parseInt($('target-key').value);
+    let targetOutVal = $('target-output').value;
+    const overwrite = $('overwrite-existing').checked;
+
+    const refRows = state.ref.rows;
+    const targetRows = state.target.rows;
+    const targetHeaders = state.target.headers;
+
+    const map = new Map();
+    for(let r=1; r<refRows.length; r++){
+      const k = normKey(refRows[r][refKeyIdx]);
+      if(k==='') continue;
+      map.set(k, refRows[r][refValIdx]);
+    }
+
+    let outHeaders = targetHeaders.slice();
+    let outRows = targetRows.map(row=>row.slice());
+    let outIdx;
+    if(targetOutVal === '__new__'){
+      const newName = ($('new-col-name').value || 'outcome').trim() || 'outcome';
+      outIdx = outHeaders.length;
+      outHeaders.push(newName);
+      outRows[0].push(newName);
+      for(let r=1;r<outRows.length;r++){ outRows[r].push(null); }
+    } else {
+      outIdx = parseInt(targetOutVal);
+    }
+
+    let matched=0, unmatched=0;
+    const unmatchedKeys = [];
+    for(let r=1; r<outRows.length; r++){
+      const k = normKey(outRows[r][targetKeyIdx]);
+      const existing = outRows[r][outIdx];
+      const hasExisting = existing!==null && existing!==undefined && existing!=='';
+      if(map.has(k)){
+        if(overwrite || !hasExisting){
+          outRows[r][outIdx] = map.get(k);
+        }
+        matched++;
+      } else {
+        unmatched++;
+        if(unmatchedKeys.length<200) unmatchedKeys.push(k || '(blank)');
+      }
+    }
+
+    resultRows = outRows;
+    resultHeaders = outHeaders;
+    outBaseName = (state.target.filename||'target').replace(/\.(xlsx|xls|csv)$/i,'') + '-filled';
+
+    $('stat-total').textContent = outRows.length-1;
+    $('stat-matched').textContent = matched;
+    $('stat-unmatched').textContent = unmatched;
+
+    if(unmatched>0){
+      $('unmatched-details').style.display = 'block';
+      $('unmatched-list').textContent = unmatchedKeys.join(', ') + (unmatched>200 ? '  … and '+(unmatched-200)+' more' : '');
+    } else {
+      $('unmatched-details').style.display = 'none';
+    }
+
+    renderPreviewTable($('preview-result'), outRows, outHeaders, 10);
+
+    $('step3').style.display = 'block';
+    $('step3').scrollIntoView({behavior:'smooth', block:'start'});
+  });
+
+  $('download-btn').addEventListener('click', ()=>{
+    const ws = XLSX.utils.aoa_to_sheet(resultRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+    XLSX.writeFile(wb, outBaseName + '.xlsx');
+  });
+
+  $('download-csv-btn').addEventListener('click', ()=>{
+    const ws = XLSX.utils.aoa_to_sheet(resultRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+    // bookType:'csv' handles proper comma/quote escaping; forceQuotes keeps
+    // dates and other punctuation-bearing text unambiguous when reopened
+    XLSX.writeFile(wb, outBaseName + '.csv', {bookType:'csv', forceQuotes:false});
+  });
+
+  $('reset-btn').addEventListener('click', ()=>{
+    location.reload();
+  });
+
+})();
+</script>
+
+</body>
+</html>

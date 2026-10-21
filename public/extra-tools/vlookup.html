@@ -1,0 +1,1537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VLookup — spreadsheet matching tool</title>
+<script src="./vendor/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --ink:#1a2420;
+    --paper:#f6f4ee;
+    --panel:#ffffff;
+    --line:#dcd7c9;
+    --moss:#3f5d4c;
+    --moss-deep:#2c4335;
+    --rust:#b5602f;
+    --amber:#c98a2c;
+    --muted:#6b7268;
+    --good:#3f5d4c;
+    --bad:#b5402f;
+    --mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  html,body{
+    margin:0; padding:0;
+    background:
+      radial-gradient(ellipse at top left, rgba(63,93,76,0.06), transparent 55%),
+      var(--paper);
+    color:var(--ink);
+    font-family:var(--sans);
+    min-height:100vh;
+  }
+  .wrap{
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+  header{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:16px;
+    margin-bottom: 32px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 20px;
+  }
+  .brand{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+  }
+  .brand .mark{
+    width:14px; height:14px;
+    background: var(--moss);
+    border-radius: 3px;
+    transform: rotate(45deg);
+    display:inline-block;
+  }
+  h1{
+    font-size: 1.35rem;
+    margin:0;
+    letter-spacing: -0.01em;
+    font-weight: 650;
+  }
+  .tag{
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .step{
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 22px 24px;
+    margin-bottom: 18px;
+    position: relative;
+  }
+  .step.disabled{
+    opacity: 0.45;
+    pointer-events: none;
+  }
+  .step-head{
+    display:flex;
+    align-items:center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .step-num{
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--moss);
+    background: rgba(63,93,76,0.1);
+    border: 1px solid rgba(63,93,76,0.25);
+    width: 22px; height:22px;
+    border-radius: 50%;
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+  }
+  .step-title{
+    font-weight: 600;
+    font-size: 0.98rem;
+  }
+  .step-sub{
+    font-size: 0.82rem;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .drop-row{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 720px){ .drop-row{ grid-template-columns: 1fr; } }
+
+  .dropzone{
+    border: 1.5px dashed var(--line);
+    border-radius: 8px;
+    padding: 20px;
+    text-align:center;
+    cursor:pointer;
+    transition: border-color 0.15s, background 0.15s;
+    background: #fdfcfa;
+  }
+  .dropzone:hover, .dropzone.drag{
+    border-color: var(--moss);
+    background: rgba(63,93,76,0.05);
+  }
+  .dropzone.filled{ border-style: solid; border-color: var(--moss); }
+  .dropzone input{ display:none; }
+  .dz-icon{
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--moss);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 6px;
+  }
+  .dz-name{
+    font-weight: 600;
+    font-size: 0.88rem;
+    word-break: break-all;
+  }
+  .dz-meta{
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+  .dz-placeholder{ color: var(--muted); font-size: 0.85rem; }
+
+  .file-controls{
+    display:none;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--line);
+    text-align: left;
+  }
+  .file-controls.show{ display:block; }
+  .fc-row{
+    display:flex;
+    gap: 10px;
+    align-items:flex-end;
+  }
+  .fc-field{ flex:1; }
+  .fc-field.narrow{ flex: 0 0 110px; }
+
+  label.field-label{
+    display:block;
+    font-size: 0.76rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 14px 0 6px;
+  }
+  label.field-label.tight{ margin-top:0; }
+  select, input[type=text], input[type=number]{
+    width:100%;
+    padding: 9px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: #fff;
+    font-family: var(--sans);
+    font-size: 0.92rem;
+    color: var(--ink);
+  }
+  select:disabled{ color: var(--muted); background:#f2f0ea; }
+  select[multiple]{ height: auto; }
+  .hint{
+    font-size: 0.74rem;
+    color: var(--amber);
+    margin-top: 6px;
+    display:none;
+  }
+  .hint.show{ display:block; }
+
+  .col-grid{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 4px;
+  }
+  @media (max-width: 720px){ .col-grid{ grid-template-columns: 1fr; } }
+  .col-panel{
+    border-left: 2px solid var(--line);
+    padding-left: 14px;
+  }
+  .col-panel .panel-title{
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--rust);
+    margin-bottom: 2px;
+  }
+
+  .type-badge{
+    display:inline-flex;align-items:center;gap:6px;
+    font-family: var(--mono); font-size:0.72rem;
+    background:#f0eee5; border:1px solid var(--line);
+    padding:3px 9px;border-radius:20px;margin-top:8px;color:var(--moss-deep);
+  }
+  .type-badge.hidden{ display:none; }
+  .type-badge .dot{ width:6px;height:6px;border-radius:50%;background:var(--moss); }
+
+  .preview{
+    margin-top: 16px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: auto;
+    max-height: 240px;
+  }
+  table{
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 0.8rem;
+  }
+  th, td{
+    text-align: left;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  th{
+    background: #f0eee5;
+    position: sticky;
+    top:0;
+    font-weight: 600;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+  tr:nth-child(even) td{ background: rgba(0,0,0,0.015); }
+  tr.header-row-marker td{
+    background: rgba(63,93,76,0.12) !important;
+    font-weight:600;
+  }
+  td.row-num, th.row-num{
+    font-family: var(--mono);
+    color: var(--muted);
+    background: #f0eee5 !important;
+    text-align:right;
+    position:sticky; left:0;
+  }
+
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    background: var(--moss);
+    color: #fdfcfa;
+    border:none;
+    padding: 12px 22px;
+    border-radius: 7px;
+    font-weight: 600;
+    font-size: 0.92rem;
+    cursor:pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .btn:hover{ background: var(--moss-deep); }
+  .btn:active{ transform: scale(0.98); }
+  .btn:disabled{
+    background: var(--line);
+    color: var(--muted);
+    cursor: not-allowed;
+  }
+  .btn.secondary{
+    background: transparent;
+    color: var(--moss);
+    border: 1.5px solid var(--moss);
+  }
+  .btn.secondary:hover{ background: rgba(63,93,76,0.08); }
+  .btn.small{
+    padding: 7px 14px;
+    font-size: 0.8rem;
+  }
+
+  .action-row{
+    display:flex;
+    align-items:center;
+    gap: 14px;
+    margin-top: 22px;
+    flex-wrap: wrap;
+  }
+
+  .results{
+    display:none;
+  }
+  .stat-row{
+    display:flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  .stat{
+    background: #fdfcfa;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 18px;
+    flex: 1;
+    min-width: 140px;
+  }
+  .stat .num{
+    font-family: var(--mono);
+    font-size: 1.6rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .stat.good .num{ color: var(--good); }
+  .stat.bad .num{ color: var(--bad); }
+  .stat .lbl{
+    font-size: 0.74rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 6px;
+  }
+
+  .filter-row{
+    display:flex; gap:10px; margin-bottom:14px; align-items:center; flex-wrap:wrap;
+  }
+  .filter-row select{ width:auto; }
+  .filter-row .search{ flex:1; min-width:180px; }
+
+  .pill{
+    display:inline-block; padding:3px 9px; border-radius:20px; font-size:0.7rem;
+    font-family: var(--mono); font-weight:600; letter-spacing:0.02em; white-space:nowrap;
+  }
+  .pill.matched{ background: rgba(63,93,76,0.12); color: var(--good); }
+  .pill.unmatched{ background: rgba(181,64,47,0.1); color: var(--bad); }
+  .reason{ color: var(--muted); font-size: 0.76rem; margin-top: 2px; }
+  .edit-input{
+    border: 1px solid var(--line); border-radius:5px; padding:4px 6px;
+    font-family: var(--mono); font-size: 0.78rem; width:100%;
+  }
+  .edit-input.changed{ border-color: var(--amber); }
+  .table-wrap{ max-height: 460px; overflow:auto; border:1px solid var(--line); border-radius:6px; }
+  .table-wrap table{ margin:0; }
+  .table-wrap thead{ position:sticky; top:0; background:#f0eee5; z-index:1; }
+  .empty-note{ color: var(--muted); font-size:0.85rem; padding:20px 0; text-align:center; }
+
+  .rename-row{ display:flex; align-items:center; gap:8px; margin-top:8px; }
+  .rename-row .orig{
+    font-family: var(--mono); font-size:0.76rem; color: var(--muted);
+    min-width:110px; max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .rename-row .arrow{ color: var(--muted); font-size:0.8rem; }
+  .rename-row input{ flex:1; }
+  .rename-label{
+    font-size:0.74rem; color: var(--muted); text-transform:uppercase; letter-spacing:0.06em;
+    margin: 14px 0 2px;
+  }
+
+  .ref-file-item{
+    border: 1px solid var(--line); border-radius: 7px; padding: 12px 14px; margin-top: 10px;
+    background: #fdfcfa;
+  }
+  .ref-file-item .rf-top{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+  }
+  .ref-file-item .fname{ font-weight:600; font-size:0.86rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ref-file-item .frows{ color: var(--muted); font-size:0.76rem; flex-shrink:0; margin-left:10px; }
+  .ref-file-item .remove{
+    background:none; border:none; color: var(--bad); cursor:pointer; font-size:1rem;
+    line-height:1; padding:2px 6px; flex-shrink:0;
+  }
+  .ref-file-item .rf-controls{
+    display:grid; grid-template-columns: 1fr 90px 1fr; gap:10px; margin-top:10px;
+  }
+  @media (max-width:640px){ .ref-file-item .rf-controls{ grid-template-columns:1fr; } }
+
+  .note{
+    font-size: 0.8rem;
+    color: var(--muted);
+    line-height:1.5;
+    margin-top: 10px;
+  }
+  .note b{ color: var(--ink); }
+
+  .status-badge{
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: rgba(63,93,76,0.12);
+    color: var(--moss-deep);
+    margin-left: auto;
+  }
+
+  footer{
+    text-align:center;
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 40px;
+  }
+
+  .checkbox-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-top:14px;
+    font-size: 0.85rem;
+  }
+  .checkbox-row input{ accent-color: var(--moss); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <span class="mark"></span>
+      <div>
+        <h1>VLookup</h1>
+        <div class="tag">spreadsheet matching tool</div>
+      </div>
+    </div>
+    <span class="tag" style="align-self:center;">runs locally in your browser · nothing uploaded</span>
+  </header>
+
+  <!-- STEP 1: FILES -->
+  <div class="step" id="step1">
+    <div class="step-head">
+      <span class="step-num">1</span>
+      <div>
+        <div class="step-title">Load your files</div>
+        <div class="step-sub">The target file is the one that needs filling in. Reference file(s) hold the values you want to pull in — add more than one if your lookup data is split across several files. Multi-sheet workbooks and headers that don't start on row 1 are both fine.</div>
+      </div>
+    </div>
+
+    <div class="drop-row">
+      <div>
+        <div class="dropzone" id="dz-target" title="The file you need to fill in — every row here gets matched against your reference file(s).">
+          <input type="file" id="file-target" accept=".xlsx,.xls,.csv">
+          <div class="dz-icon">target file</div>
+          <div id="dz-target-content" class="dz-placeholder">Click or drop file — the one you need to fill in</div>
+        </div>
+        <div class="file-controls" id="fc-target">
+          <div class="fc-row">
+            <div class="fc-field">
+              <label class="field-label tight" title="Which worksheet tab to read from this workbook.">Sheet</label>
+              <select id="target-sheet" title="Which worksheet tab to read from this workbook."></select>
+            </div>
+            <div class="fc-field narrow">
+              <label class="field-label tight" title="Which row contains your column headers.">Header row</label>
+              <input type="number" id="target-header-row" min="1" value="1" title="Which row contains your column headers. Auto-detected, but override it if the preview below highlights the wrong row.">
+            </div>
+          </div>
+          <div class="hint" id="target-hint">Header row auto-detected — double check it's right below.</div>
+        </div>
+      </div>
+      <div>
+        <div class="dropzone" id="dz-ref" title="The file(s) holding the values you want to pull in. You can add more than one.">
+          <input type="file" id="file-ref" accept=".xlsx,.xls,.csv" multiple>
+          <div class="dz-icon">reference file(s)</div>
+          <div id="dz-ref-content" class="dz-placeholder">Click or drop file(s) — the lookup data you're matching against. You can add more than one.</div>
+        </div>
+        <div id="ref-file-list"></div>
+      </div>
+    </div>
+
+    <div class="preview" id="raw-preview-wrap" style="display:none; margin-top:18px;">
+      <table id="raw-preview"></table>
+    </div>
+    <div class="note" id="raw-preview-note" style="display:none;">Previewing <b id="raw-preview-label"></b> — the highlighted row is what will be used as the header. Change its "Header row" number above if it picked the wrong one.</div>
+  </div>
+
+  <!-- STEP 2: COLUMNS -->
+  <div class="step disabled" id="step2">
+    <div class="step-head">
+      <span class="step-num">2</span>
+      <div>
+        <div class="step-title">Choose the columns</div>
+        <div class="step-sub">Headers don't need to match, column order doesn't matter, and matching tolerates format differences (e.g. a phone number with or without a country code) — pick columns by what they actually contain.</div>
+      </div>
+      <span class="status-badge" id="sheet-badges"></span>
+    </div>
+
+    <div class="col-grid">
+      <div class="col-panel">
+        <div class="panel-title">Target</div>
+        <label class="field-label" title="The column in your target file to match against the reference data.">Key column (to match on)</label>
+        <select id="target-key" disabled title="The column in your target file to match against the reference data."></select>
+        <div class="type-badge hidden" id="badge-target"><span class="dot"></span><span id="badge-target-text"></span></div>
+        <label class="field-label" title="Matching tolerates mismatched formats automatically. Override only if matches look wrong.">Override detected type</label>
+        <select id="sel-target-type" title="Matching tolerates mismatched formats automatically (e.g. a phone number with or without a country code). Override only if matches look wrong.">
+          <option value="auto">Auto-detect</option>
+          <option value="text">Text</option>
+          <option value="number">Number</option>
+          <option value="date">Date</option>
+          <option value="phone">Phone number</option>
+        </select>
+      </div>
+      <div class="col-panel">
+        <div class="panel-title">Reference</div>
+        <label class="field-label" title="Each reference file's match column is set in its own file card in Step 1.">Key column (to match on)</label>
+        <div class="note" style="margin:0 0 6px;">Set per file in the list above (Step 1) — each reference file can use a different column name.</div>
+        <label class="field-label" title="Override the auto-detected type for every reference file's key column.">Override detected type</label>
+        <select id="sel-ref-type" title="Override the auto-detected type for every reference file's key column.">
+          <option value="auto">Auto-detect</option>
+          <option value="text">Text</option>
+          <option value="number">Number</option>
+          <option value="date">Date</option>
+          <option value="phone">Phone number</option>
+        </select>
+        <label class="field-label" title="Column(s) from your reference file(s) to pull into the target. Ctrl/Cmd-click to choose more than one.">Column(s) to pull in (return values)</label>
+        <select id="sel-ref-return" multiple size="4" disabled title="Column(s) from your reference file(s) to pull into the target. Ctrl/Cmd-click to choose more than one."></select>
+        <div class="note">Cmd/Ctrl-click to select more than one.</div>
+        <div id="return-name-map"></div>
+      </div>
+    </div>
+
+    <div class="checkbox-row">
+      <input type="checkbox" id="overwrite-existing" checked title="If checked, a match replaces anything already in that output column. If unchecked, only empty cells get filled.">
+      <label for="overwrite-existing" title="If checked, a match replaces anything already in that output column. If unchecked, only empty cells get filled.">Overwrite existing values in these columns</label>
+    </div>
+
+    <div class="action-row">
+      <button class="btn" id="run-btn" disabled>Run match</button>
+      <button class="btn secondary" id="preview-btn" disabled>Preview data</button>
+    </div>
+  </div>
+
+  <!-- PREVIEW -->
+  <div class="step" id="step-preview" style="display:none;">
+    <div class="step-head">
+      <span class="step-num">👁</span>
+      <div>
+        <div class="step-title">Data preview</div>
+        <div class="step-sub">First few rows of the target and each reference file, using the header row you selected</div>
+      </div>
+    </div>
+    <div class="col-grid" id="preview-grid"></div>
+  </div>
+
+  <!-- RESULTS -->
+  <div class="step results" id="step3">
+    <div class="step-head">
+      <span class="step-num">3</span>
+      <div>
+        <div class="step-title">Results</div>
+        <div class="step-sub">Review the match — edit a source value and re-run if something looks off, then download the filled file</div>
+      </div>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat"><div class="num" id="stat-total">0</div><div class="lbl">rows in target</div></div>
+      <div class="stat good"><div class="num" id="stat-matched">0</div><div class="lbl">matched</div></div>
+      <div class="stat bad"><div class="num" id="stat-unmatched">0</div><div class="lbl">no match found</div></div>
+    </div>
+
+    <div class="filter-row">
+      <select id="filter-status" title="Show all rows, only matched rows, or only unmatched rows.">
+        <option value="all">All rows</option>
+        <option value="matched">Matched only</option>
+        <option value="unmatched">Unmatched only</option>
+      </select>
+      <input type="text" class="search" id="filter-search" placeholder="Search key values..." title="Filter the table below by the target key value.">
+      <button class="btn secondary small" id="rerun-btn" title="Re-run matching, using any values you've edited in the table below.">Re-run matching</button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:90px">Status</th>
+            <th>Target key value</th>
+            <th>Return value(s) / reason</th>
+          </tr>
+        </thead>
+        <tbody id="results-body"></tbody>
+      </table>
+    </div>
+    <div class="empty-note" id="empty-note" style="display:none;">No rows match this filter.</div>
+
+    <div class="action-row">
+      <button class="btn" id="download-btn">Download as Excel (.xlsx)</button>
+      <button class="btn secondary" id="download-csv-btn">Download as CSV</button>
+      <button class="btn secondary" id="reset-btn">Start over</button>
+    </div>
+    <div class="note">The downloaded file keeps every original target column and adds your chosen return column(s). Unmatched rows export blank in those columns.</div>
+  </div>
+
+  <footer>Everything happens in your browser — files are never sent anywhere.</footer>
+</div>
+
+<script>
+(function(){
+  // ======================================================================
+  // File reading layer (header-row detection, multi-sheet, locale-aware
+  // CSV parsing, exact date-format preservation). Shared by the target
+  // file and every reference file.
+  // ======================================================================
+
+  const $ = id => document.getElementById(id);
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // Sniffs the field delimiter from the first line — semicolon-delimited
+  // exports are common (especially from EU/Spanish-locale systems), and a
+  // hardcoded comma would glue an entire semicolon-delimited row into one
+  // column, exactly like a real comma inside a quoted field would.
+  function detectDelimiter(text){
+    const firstLine = (text.split(/\r\n|\r|\n/)[0]) || '';
+    const candidates = [',', ';', '\t'];
+    let best = ',', bestCount = 0;
+    candidates.forEach(d=>{
+      const count = firstLine.split(d).length - 1;
+      if(count > bestCount){ bestCount = count; best = d; }
+    });
+    return best;
+  }
+
+  // Minimal CSV parser (handles quoted fields, escaped quotes, CRLF/LF).
+  // We deliberately do NOT use XLSX's built-in CSV ingestion: it silently
+  // guesses at dates/numbers using US (MM/DD) conventions, which corrupts
+  // ambiguous dates like "01/02/2026" (is that Jan 2 or Feb 1?) without any
+  // warning. Parsing manually means every value is kept exactly as typed
+  // unless it is unambiguously a plain number.
+  function parseCsvText(text){
+    const delim = detectDelimiter(text);
+    const rows = [];
+    let row = [], field = '', inQuotes = false;
+    text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    for(let i=0;i<text.length;i++){
+      const ch = text[i];
+      if(inQuotes){
+        if(ch === '"'){
+          if(text[i+1] === '"'){ field += '"'; i++; }
+          else inQuotes = false;
+        } else field += ch;
+      } else {
+        if(ch === '"') inQuotes = true;
+        else if(ch === delim){ row.push(field); field=''; }
+        else if(ch === '\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+        else field += ch;
+      }
+    }
+    row.push(field);
+    rows.push(row);
+    if(rows.length && rows[rows.length-1].length===1 && rows[rows.length-1][0]==='') rows.pop();
+    // only coerce to a number when the WHOLE trimmed field is an unambiguous
+    // plain number — never touch anything date-like or locale-formatted
+    const numRe = /^-?\d+(\.\d+)?$/;
+    return rows.map(r=>r.map(v=>{
+      const t = v.trim();
+      if(t==='') return null;
+      return numRe.test(t) ? Number(t) : v;
+    }));
+  }
+
+  // is this cell's number format actually a date/time format?
+  function isDateFormat(z){
+    if(!z) return false;
+    if(typeof XLSX.SSF!=='undefined' && XLSX.SSF.is_date){ try{ return XLSX.SSF.is_date(z); }catch(e){} }
+    return /[hHmMdDyYsS]/.test(z) && !/^General$/i.test(z);
+  }
+
+  function readWorkbook(file, cb){
+    const isCsv = /\.csv$/i.test(file.name);
+    const reader = new FileReader();
+    reader.onload = function(e){
+      if(isCsv){
+        const text = new TextDecoder('utf-8').decode(new Uint8Array(e.target.result));
+        const rows = parseCsvText(text);
+        // wrap in a workbook-shaped object so the rest of the app doesn't
+        // need to know CSV was handled differently
+        cb({ SheetNames:['Sheet1'], Sheets:{ Sheet1: { __csvRows: rows } } });
+      } else {
+        const data = new Uint8Array(e.target.result);
+        // cellDates intentionally left off — we pull the source file's own
+        // formatted date text (cell.w) ourselves in sheetToRows below, which
+        // preserves its original format instead of swapping in a default one
+        const wb = XLSX.read(data, {type:'array', cellNF:true});
+        cb(wb);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function sheetToRows(wb, sheetName){
+    const ws = wb.Sheets[sheetName];
+    if(ws && ws.__csvRows) return ws.__csvRows;
+    if(!ws || !ws['!ref']) return [];
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    const rows = [];
+    for(let r=range.s.r; r<=range.e.r; r++){
+      const row = [];
+      for(let c=range.s.c; c<=range.e.c; c++){
+        const cell = ws[XLSX.utils.encode_cell({r,c})];
+        if(!cell){ row.push(null); continue; }
+        if(isDateFormat(cell.z)){
+          // keep the exact formatted text the source file displays
+          // (e.g. "01/02/2026" in whatever format that workbook used)
+          row.push(cell.w !== undefined ? cell.w : cell.v);
+        } else {
+          row.push(cell.v !== undefined ? cell.v : null);
+        }
+      }
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  // what fraction of a row's non-blank cells look like text labels rather
+  // than numbers/ids — real header rows are almost always mostly text,
+  // while data rows are usually dominated by numeric/id values
+  function textiness(row){
+    let textish=0, total=0;
+    row.forEach(v=>{
+      if(v===null||v===undefined||v==='') return;
+      total++;
+      if(typeof v === 'number') return;
+      const s = String(v).trim();
+      if(s!=='' && isNaN(Number(s.replace(/,/g,'')))) textish++;
+    });
+    return total>0 ? textish/total : 0;
+  }
+
+  // guesses which row is the true header row by finding the row whose
+  // populated columns stay densely filled for many rows below it, weighted
+  // toward rows that actually look like column labels (text) rather than
+  // data (numbers).
+  function guessHeaderRow(rawRows){
+    const maxCheck = Math.min(20, rawRows.length);
+    const lookahead = 15;
+    let best = 0, bestScore = -1;
+    for(let i=0;i<maxCheck;i++){
+      const row = rawRows[i]||[];
+      const cols = [];
+      row.forEach((v,idx)=>{ if(v!==null&&v!==undefined&&v!=='') cols.push(idx); });
+      if(cols.length===0) continue;
+      const end = Math.min(rawRows.length, i+1+lookahead);
+      let filled=0, total=0;
+      for(let j=i+1;j<end;j++){
+        cols.forEach(c=>{
+          total++;
+          const v = (rawRows[j]||[])[c];
+          if(v!==null&&v!==undefined&&v!=='') filled++;
+        });
+      }
+      const fillRate = total>0 ? filled/total : 0;
+      const textRatio = textiness(row);
+      const score = fillRate * cols.length * (0.25 + 0.75*textRatio);
+      if(score>bestScore){ bestScore=score; best=i; }
+    }
+    return best;
+  }
+
+  function computeHeaders(rawRows, headerRowIdx){
+    const headerRow = rawRows[headerRowIdx] || [];
+    const seen = {};
+    return headerRow.map((h,i)=>{
+      let name = (h===null||h===undefined||h==='') ? '(column '+(i+1)+')' : String(h).trim();
+      if(seen[name]!==undefined){
+        seen[name]++;
+        name = name + ' ('+seen[name]+')';
+      } else {
+        seen[name] = 0;
+      }
+      return name;
+    });
+  }
+
+  function colLetter(i){
+    let s='';
+    i++;
+    while(i>0){ const m=(i-1)%26; s=String.fromCharCode(65+m)+s; i=Math.floor((i-1)/26); }
+    return s;
+  }
+
+  // ======================================================================
+  // Type detection, normalization, fuzzy matching — ported from the
+  // Smart Lookup tool, unchanged. Lets a value match across files even
+  // when the same column was read/typed differently (text vs number vs
+  // date vs phone).
+  // ======================================================================
+
+  function detectColumnType(values){
+    const sample = values.filter(v => v !== '' && v !== null && v !== undefined).slice(0, 50);
+    if(sample.length === 0) return 'text';
+    let dateCount=0, numCount=0, phoneCount=0;
+    sample.forEach(v=>{
+      if(v instanceof Date) dateCount++;
+      else if(isDateLike(v)) dateCount++;
+      else if(isNumberLike(v)) numCount++;
+      else if(isPhoneLike(v)) phoneCount++;
+    });
+    const n = sample.length;
+    if(dateCount/n > 0.6) return 'date';
+    if(numCount/n > 0.6) return 'number';
+    if(phoneCount/n > 0.6) return 'phone';
+    return 'text';
+  }
+  function isNumberLike(v){
+    if(typeof v === 'number') return true;
+    if(typeof v !== 'string') return false;
+    const cleaned = v.replace(/[,\s]/g,'');
+    return cleaned !== '' && !isNaN(Number(cleaned));
+  }
+  function isDateLike(v){
+    if(v instanceof Date) return true;
+    if(typeof v === 'number') return false; // ambiguous with plain numbers
+    if(typeof v !== 'string') return false;
+    const s = v.trim();
+    return /^\d{4}-\d{1,2}-\d{1,2}$/.test(s) ||
+           /^\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4}$/.test(s) ||
+           /^\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}$/.test(s);
+  }
+  function isPhoneLike(v){
+    if(typeof v === 'number') return false;
+    if(typeof v !== 'string') return false;
+    const digits = v.replace(/[^\d]/g,'');
+    return digits.length >= 7 && digits.length <= 15 && /^[\d\s()+\-.]+$/.test(v.trim());
+  }
+
+  function normalize(value, type){
+    if(value === '' || value === null || value === undefined) return {key:null, display:''};
+    switch(type){
+      case 'number': return {key: normalizeNumber(value), display: String(value)};
+      case 'date': return {key: normalizeDate(value), display: String(value)};
+      case 'phone': return {key: normalizePhone(value), display: String(value)};
+      default: return {key: normalizeText(value), display: String(value)};
+    }
+  }
+  function normalizeText(v){
+    return String(v).trim().toLowerCase().replace(/\s+/g,' ');
+  }
+  function normalizeNumber(v){
+    if(typeof v === 'number') return roundKey(v);
+    const cleaned = String(v).trim().replace(/[,\s]/g,'');
+    const n = Number(cleaned);
+    return isNaN(n) ? null : roundKey(n);
+  }
+  function roundKey(n){ return Math.round(n*1000)/1000; }
+  function normalizeDate(v){
+    let d = null;
+    if(v instanceof Date){ d = v; }
+    else if(typeof v === 'number'){
+      d = new Date(Math.round((v - 25569) * 86400 * 1000)); // Excel serial date
+    } else if(typeof v === 'string'){
+      const s = v.trim();
+      let m;
+      if(m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)){
+        d = new Date(+m[1], +m[2]-1, +m[3]);
+      } else if(m = s.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/)){
+        let a=+m[1], b=+m[2], y=+m[3];
+        if(y<100) y += 2000;
+        // ambiguous DD/MM vs MM/DD: prefer DD/MM if first part >12
+        if(a>12){ d = new Date(y, b-1, a); }
+        else { d = new Date(y, a-1, b); } // default assume MM/DD/YYYY unless first part >12
+      } else {
+        const parsed = Date.parse(s);
+        if(!isNaN(parsed)) d = new Date(parsed);
+      }
+    }
+    if(!d || isNaN(d.getTime())) return null;
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+  function normalizePhone(v){
+    const digits = String(v).replace(/[^\d]/g,'');
+    return digits.replace(/^0+/,'').slice(-12); // last 12 digits, drop leading zeros
+  }
+
+  function levenshtein(a,b){
+    const m=a.length,n=b.length;
+    const dp=Array.from({length:m+1},(_,i)=>[i,...Array(n).fill(0)]);
+    for(let j=0;j<=n;j++) dp[0][j]=j;
+    for(let i=1;i<=m;i++) for(let j=1;j<=n;j++){
+      dp[i][j] = a[i-1]===b[j-1] ? dp[i-1][j-1] : 1+Math.min(dp[i-1][j-1],dp[i-1][j],dp[i][j-1]);
+    }
+    return dp[m][n];
+  }
+  function similarity(a,b){
+    const dist = levenshtein(a,b);
+    const maxLen = Math.max(a.length,b.length) || 1;
+    return 1 - dist/maxLen;
+  }
+
+  // ======================================================================
+  // State
+  // ======================================================================
+
+  // Target stays array-of-arrays (headers at rows[0]) throughout — this is
+  // what lets export preserve every original column exactly, in order,
+  // the same way the file-reading layer above already guarantees.
+  const state = {
+    target: { wb:null, sheetName:null, rawRows:null, headerRowIdx:0, headers:null, rows:null, filename:null }
+  };
+
+  // Reference files are converted to row-objects (keyed by header name)
+  // once loaded — that's the shape the matching engine above expects, and
+  // it's fine to lose column order here since reference rows are only
+  // ever read from, never re-exported.
+  // Each entry: { id, name, wb, sheetName, rawRows, headerRowIdx, headers, objRows, keyCol }
+  let refFiles = [];
+  let refIdSeq = 0;
+
+  let matchResults = []; // {rowIndex, displayValue, status, reason, returned}
+  let existingEdits = {}; // rowIndex -> edited target key value, persists across reruns
+  let refReturnCols = [];
+  let returnNameMap = {}; // origRefColumn -> output column name
+  let resultRows = null, resultHeaders = null, outBaseName = 'target-filled';
+
+  let lastPreviewSource = null; // {label, rawRows, headerRowIdx} — for the raw preview panel
+
+  function refHeaders(){
+    const set = new Set();
+    refFiles.forEach(f => (f.headers||[]).forEach(h => set.add(h)));
+    return Array.from(set);
+  }
+
+  // ======================================================================
+  // Target file loading
+  // ======================================================================
+
+  function populateSheetSelect(selectEl, wb, currentSheetName){
+    selectEl.innerHTML = '';
+    wb.SheetNames.forEach(name=>{
+      const opt = document.createElement('option');
+      opt.value = name; opt.textContent = name;
+      selectEl.appendChild(opt);
+    });
+    selectEl.value = currentSheetName;
+  }
+
+  function refreshTargetDerivedData(){
+    const s = state.target;
+    if(!s.rawRows) return;
+    const maxRow = s.rawRows.length;
+    const input = $('target-header-row');
+    input.max = maxRow;
+    let hIdx = Math.round(parseFloat(input.value)) - 1;
+    if(isNaN(hIdx) || hIdx<0) hIdx = 0;
+    if(hIdx>maxRow-1) hIdx = maxRow-1;
+    s.headerRowIdx = hIdx;
+    s.headers = computeHeaders(s.rawRows, hIdx);
+    s.rows = [s.headers].concat(s.rawRows.slice(hIdx+1));
+    lastPreviewSource = { label: 'target file', rawRows: s.rawRows, headerRowIdx: s.headerRowIdx };
+    renderRawPreview();
+    tryEnableStep2();
+  }
+
+  function loadTargetSheet(sheetName){
+    const s = state.target;
+    s.sheetName = sheetName;
+    s.rawRows = sheetToRows(s.wb, sheetName);
+    const guess = guessHeaderRow(s.rawRows);
+    $('target-header-row').value = guess+1;
+    const hint = $('target-hint');
+    hint.classList.add('show');
+    const guessedRow = s.rawRows[guess] || [];
+    if(textiness(guessedRow) < 0.5){
+      hint.textContent = '⚠ Auto-detected row '+(guess+1)+' looks like it may be data, not headers — please check the preview below and correct the row number if needed.';
+      hint.style.color = 'var(--bad)';
+    } else {
+      hint.textContent = "Header row auto-detected — double check it's right below.";
+      hint.style.color = '';
+    }
+    refreshTargetDerivedData();
+  }
+
+  $('target-sheet').addEventListener('change', e=> loadTargetSheet(e.target.value));
+  $('target-header-row').addEventListener('input', refreshTargetDerivedData);
+
+  const dzTarget = $('dz-target'), fileTarget = $('file-target'), dzTargetContent = $('dz-target-content');
+  dzTarget.addEventListener('click', ()=> fileTarget.click());
+  dzTarget.addEventListener('dragover', e=>{ e.preventDefault(); dzTarget.classList.add('drag'); });
+  dzTarget.addEventListener('dragleave', ()=> dzTarget.classList.remove('drag'));
+  dzTarget.addEventListener('drop', e=>{
+    e.preventDefault(); dzTarget.classList.remove('drag');
+    if(e.dataTransfer.files.length) handleTargetFile(e.dataTransfer.files[0]);
+  });
+  fileTarget.addEventListener('change', e=>{
+    if(e.target.files.length) handleTargetFile(e.target.files[0]);
+  });
+  function handleTargetFile(file){
+    dzTargetContent.innerHTML = '<div class="dz-name">'+escapeHtml(file.name)+'</div><div class="dz-meta">loading…</div>';
+    state.target.filename = file.name;
+    readWorkbook(file, (wb)=>{
+      state.target.wb = wb;
+      const sheetCount = wb.SheetNames.length;
+      dzTargetContent.innerHTML = '<div class="dz-name">'+escapeHtml(file.name)+'</div><div class="dz-meta">'+sheetCount+' sheet'+(sheetCount>1?'s':'')+' found</div>';
+      dzTarget.classList.add('filled');
+      $('fc-target').classList.add('show');
+      populateSheetSelect($('target-sheet'), wb, wb.SheetNames[0]);
+      loadTargetSheet(wb.SheetNames[0]);
+    });
+  }
+
+  // ======================================================================
+  // Reference file(s) loading — multiple files, each with its own sheet,
+  // header row, and match column.
+  // ======================================================================
+
+  const dzRef = $('dz-ref'), fileRef = $('file-ref'), dzRefContent = $('dz-ref-content');
+  dzRef.addEventListener('click', ()=> fileRef.click());
+  dzRef.addEventListener('dragover', e=>{ e.preventDefault(); dzRef.classList.add('drag'); });
+  dzRef.addEventListener('dragleave', ()=> dzRef.classList.remove('drag'));
+  dzRef.addEventListener('drop', e=>{
+    e.preventDefault(); dzRef.classList.remove('drag');
+    if(e.dataTransfer.files.length) Array.from(e.dataTransfer.files).forEach(addRefFile);
+  });
+  fileRef.addEventListener('change', e=>{
+    if(e.target.files.length) Array.from(e.target.files).forEach(addRefFile);
+    e.target.value = '';
+  });
+
+  function addRefFile(file){
+    const entry = {
+      id: 'ref'+(++refIdSeq), name: file.name, wb:null, sheetName:null,
+      rawRows:null, headerRowIdx:0, headers:null, objRows:null, keyCol:null
+    };
+    refFiles.push(entry);
+    dzRef.classList.add('filled');
+    readWorkbook(file, (wb)=>{
+      entry.wb = wb;
+      loadRefSheet(entry, wb.SheetNames[0]);
+    });
+  }
+
+  function refRowsAsObjects(entry){
+    if(!entry.rawRows) return [];
+    const headers = entry.headers;
+    return entry.rawRows.slice(entry.headerRowIdx+1).map(r=>{
+      const obj = {};
+      headers.forEach((h,i)=> obj[h] = r[i]!==undefined ? r[i] : null);
+      return obj;
+    });
+  }
+
+  function refreshRefDerivedData(entry){
+    if(!entry.rawRows) return;
+    const maxRow = entry.rawRows.length;
+    let hIdx = entry.headerRowIdx;
+    if(isNaN(hIdx) || hIdx<0) hIdx = 0;
+    if(hIdx>maxRow-1) hIdx = maxRow-1;
+    entry.headerRowIdx = hIdx;
+    entry.headers = computeHeaders(entry.rawRows, hIdx);
+    if(!entry.keyCol || !entry.headers.includes(entry.keyCol)) entry.keyCol = entry.headers[0];
+    entry.objRows = refRowsAsObjects(entry);
+    renderRefFileList();
+    tryEnableStep2();
+  }
+
+  function loadRefSheet(entry, sheetName){
+    entry.sheetName = sheetName;
+    entry.rawRows = sheetToRows(entry.wb, sheetName);
+    entry.headerRowIdx = guessHeaderRow(entry.rawRows);
+    refreshRefDerivedData(entry);
+  }
+
+  function renderRefFileList(){
+    const container = $('ref-file-list');
+    container.innerHTML = '';
+    if(refFiles.length===0){
+      dzRefContent.innerHTML = 'Click or drop file(s) — the lookup data you\'re matching against. You can add more than one.';
+      return;
+    }
+    const totalRows = refFiles.reduce((sum,f)=> sum + (f.objRows ? f.objRows.length : 0), 0);
+    dzRefContent.innerHTML = '<div class="dz-name">'+refFiles.length+' file'+(refFiles.length>1?'s':'')+' loaded</div><div class="dz-meta">'+totalRows+' total rows · click or drop to add more</div>';
+
+    refFiles.forEach((entry)=>{
+      const item = document.createElement('div');
+      item.className = 'ref-file-item';
+
+      const top = document.createElement('div');
+      top.className = 'rf-top';
+      const fname = document.createElement('div'); fname.className='fname'; fname.title=entry.name; fname.textContent = entry.name;
+      const frows = document.createElement('div'); frows.className='frows'; frows.textContent = (entry.objRows ? entry.objRows.length : 0) + ' rows';
+      const remove = document.createElement('button'); remove.className='remove'; remove.textContent='✕'; remove.title='Remove this file';
+      remove.addEventListener('click', ()=>{
+        refFiles = refFiles.filter(f=>f.id!==entry.id);
+        renderRefFileList();
+        tryEnableStep2();
+      });
+      top.appendChild(fname); top.appendChild(frows); top.appendChild(remove);
+      item.appendChild(top);
+
+      if(entry.headers){
+        const controls = document.createElement('div');
+        controls.className = 'rf-controls';
+
+        // Sheet select (only meaningful for multi-sheet workbooks, but shown
+        // consistently so the control doesn't jump around between files)
+        const sheetWrap = document.createElement('div');
+        const sheetLabel = document.createElement('label'); sheetLabel.className='field-label tight'; sheetLabel.title='Which worksheet tab to read from this workbook.'; sheetLabel.textContent='Sheet';
+        const sheetSel = document.createElement('select'); sheetSel.title='Which worksheet tab to read from this workbook.';
+        (entry.wb ? entry.wb.SheetNames : [entry.sheetName]).forEach(name=>{
+          const opt = document.createElement('option'); opt.value=name; opt.textContent=name;
+          if(name===entry.sheetName) opt.selected = true;
+          sheetSel.appendChild(opt);
+        });
+        sheetSel.addEventListener('change', ()=> loadRefSheet(entry, sheetSel.value));
+        sheetWrap.appendChild(sheetLabel); sheetWrap.appendChild(sheetSel);
+
+        const headerWrap = document.createElement('div');
+        const headerLabel = document.createElement('label'); headerLabel.className='field-label tight'; headerLabel.title='Which row contains your column headers.'; headerLabel.textContent='Header row';
+        const headerInput = document.createElement('input'); headerInput.type='number'; headerInput.min='1'; headerInput.value=entry.headerRowIdx+1;
+        headerInput.title = 'Which row contains your column headers. Override it if the preview looks wrong.';
+        headerInput.addEventListener('input', ()=>{
+          const v = Math.round(parseFloat(headerInput.value))-1;
+          entry.headerRowIdx = isNaN(v)||v<0 ? 0 : v;
+          lastPreviewSource = { label: entry.name, rawRows: entry.rawRows, headerRowIdx: entry.headerRowIdx };
+          refreshRefDerivedData(entry);
+          renderRawPreview();
+        });
+        headerWrap.appendChild(headerLabel); headerWrap.appendChild(headerInput);
+
+        const keyWrap = document.createElement('div');
+        const keyLabel = document.createElement('label'); keyLabel.className='field-label tight'; keyLabel.title='The column in this reference file to match against the target\'s key column.'; keyLabel.textContent='Match column';
+        const keySelect = document.createElement('select'); keySelect.title='The column in this reference file to match against the target\'s key column.';
+        entry.headers.forEach(h=>{
+          const opt = document.createElement('option'); opt.value=h; opt.textContent=h;
+          if(h===entry.keyCol) opt.selected = true;
+          keySelect.appendChild(opt);
+        });
+        keySelect.addEventListener('change', ()=>{ entry.keyCol = keySelect.value; tryEnableStep2(); });
+        keyWrap.appendChild(keyLabel); keyWrap.appendChild(keySelect);
+
+        controls.appendChild(sheetWrap);
+        controls.appendChild(headerWrap);
+        controls.appendChild(keyWrap);
+        item.appendChild(controls);
+
+        const previewBtn = document.createElement('button');
+        previewBtn.className = 'btn secondary small';
+        previewBtn.style.marginTop = '10px';
+        previewBtn.textContent = 'Preview this file’s header pick';
+        previewBtn.addEventListener('click', ()=>{
+          lastPreviewSource = { label: entry.name, rawRows: entry.rawRows, headerRowIdx: entry.headerRowIdx };
+          renderRawPreview();
+        });
+        item.appendChild(previewBtn);
+      }
+
+      container.appendChild(item);
+    });
+  }
+
+  // ======================================================================
+  // Raw preview (shared between target and any reference file)
+  // ======================================================================
+
+  function renderRawPreview(){
+    const src = lastPreviewSource;
+    if(!src || !src.rawRows) return;
+    const maxCols = Math.max(...src.rawRows.slice(0, 12).map(r=>r.length), 1);
+    const maxRows = Math.min(12, src.rawRows.length);
+    let html = '<thead><tr><th class="row-num">#</th>';
+    for(let c=0;c<maxCols;c++) html += '<th>'+colLetter(c)+'</th>';
+    html += '</tr></thead><tbody>';
+    for(let r=0;r<maxRows;r++){
+      const isHeader = r===src.headerRowIdx;
+      html += '<tr'+(isHeader?' class="header-row-marker"':'')+'><td class="row-num">'+(r+1)+'</td>';
+      for(let c=0;c<maxCols;c++){
+        const v = (src.rawRows[r]||[])[c];
+        html += '<td>'+escapeHtml(v===null||v===undefined?'':v)+'</td>';
+      }
+      html += '</tr>';
+    }
+    html += '</tbody>';
+    $('raw-preview').innerHTML = html;
+    $('raw-preview-wrap').style.display = 'block';
+    $('raw-preview-note').style.display = 'block';
+    $('raw-preview-label').textContent = src.label;
+  }
+
+  // ======================================================================
+  // Step 2: column selection
+  // ======================================================================
+
+  function populateSelect(sel, headers){
+    sel.innerHTML = '';
+    headers.forEach((h,i)=>{
+      const opt = document.createElement('option');
+      opt.value = i; opt.textContent = colLetter(i)+' — '+h;
+      sel.appendChild(opt);
+    });
+    sel.disabled = false;
+  }
+  function populateMultiSelect(sel, headers){
+    sel.innerHTML = '';
+    headers.forEach(h=>{
+      const opt = document.createElement('option');
+      opt.value = h; opt.textContent = h;
+      sel.appendChild(opt);
+    });
+    sel.disabled = headers.length === 0;
+  }
+
+  function updateTargetBadge(){
+    const idx = parseInt($('target-key').value);
+    if(isNaN(idx) || !state.target.rows) return;
+    const values = state.target.rows.slice(1).map(r=>r[idx]);
+    const type = detectColumnType(values);
+    $('badge-target').classList.remove('hidden');
+    $('badge-target-text').textContent = 'Detected as ' + type;
+  }
+
+  function renderReturnNameMap(){
+    const selected = Array.from($('sel-ref-return').selectedOptions).map(o=>o.value);
+    const container = $('return-name-map');
+    container.innerHTML = '';
+    if(selected.length === 0) return;
+
+    const label = document.createElement('div');
+    label.className = 'rename-label';
+    label.textContent = 'Name the output column' + (selected.length>1 ? 's' : '');
+    container.appendChild(label);
+
+    selected.forEach(col=>{
+      const row = document.createElement('div');
+      row.className = 'rename-row';
+      const orig = document.createElement('div');
+      orig.className = 'orig'; orig.title = col; orig.textContent = col;
+      const arrow = document.createElement('div');
+      arrow.className = 'arrow'; arrow.textContent = '→';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.title = 'The column name this will have in your output file. If a column with this name already exists in your target file, it gets filled in; otherwise a new column is added.';
+      input.value = returnNameMap[col] || (selected.length===1 ? 'outcome' : col);
+      input.addEventListener('input', ()=>{ returnNameMap[col] = input.value; });
+      returnNameMap[col] = input.value;
+      row.appendChild(orig); row.appendChild(arrow); row.appendChild(input);
+      container.appendChild(row);
+    });
+  }
+
+  function tryEnableStep2(){
+    const haveTarget = !!(state.target.rows);
+    const haveRef = refFiles.some(f=>f.objRows && f.objRows.length);
+    if(haveTarget && haveRef){
+      $('step2').classList.remove('disabled');
+      populateSelect($('target-key'), state.target.headers);
+      populateMultiSelect($('sel-ref-return'), refHeaders());
+      updateTargetBadge();
+      renderReturnNameMap();
+      $('sheet-badges').textContent = 'target: "'+state.target.sheetName+'" row '+(state.target.headerRowIdx+1)+'  ·  '+refFiles.length+' reference file'+(refFiles.length>1?'s':'');
+      $('run-btn').disabled = false;
+      $('preview-btn').disabled = false;
+    } else {
+      $('step2').classList.add('disabled');
+      $('run-btn').disabled = true;
+      $('preview-btn').disabled = true;
+    }
+  }
+
+  $('target-key').addEventListener('change', updateTargetBadge);
+  $('sel-ref-return').addEventListener('change', renderReturnNameMap);
+
+  // ======================================================================
+  // Data preview (step between columns and running the match)
+  // ======================================================================
+
+  function renderPreviewTable(tableEl, rows, headers, maxRows){
+    let html = '<thead><tr>' + headers.map(h=>'<th>'+escapeHtml(h)+'</th>').join('') + '</tr></thead><tbody>';
+    for(let r=1; r<Math.min(rows.length, maxRows+1); r++){
+      html += '<tr>' + headers.map((_,i)=> '<td>'+escapeHtml(rows[r][i]===null||rows[r][i]===undefined?'':rows[r][i])+'</td>').join('') + '</tr>';
+    }
+    html += '</tbody>';
+    tableEl.innerHTML = html;
+  }
+
+  $('preview-btn').addEventListener('click', ()=>{
+    const grid = $('preview-grid');
+    grid.innerHTML = '';
+
+    const targetPanel = document.createElement('div');
+    targetPanel.className = 'col-panel';
+    targetPanel.innerHTML = '<div class="panel-title">Target</div><div class="preview"><table></table></div>';
+    renderPreviewTable(targetPanel.querySelector('table'), state.target.rows, state.target.headers, 8);
+    grid.appendChild(targetPanel);
+
+    refFiles.forEach(f=>{
+      if(!f.objRows) return;
+      const panel = document.createElement('div');
+      panel.className = 'col-panel';
+      panel.innerHTML = '<div class="panel-title">'+escapeHtml(f.name)+'</div><div class="preview"><table></table></div>';
+      const asRows = [f.headers].concat(f.objRows.slice(0,8).map(o=>f.headers.map(h=>o[h])));
+      renderPreviewTable(panel.querySelector('table'), asRows, f.headers, 8);
+      grid.appendChild(panel);
+    });
+
+    $('step-preview').style.display = 'block';
+    $('step-preview').scrollIntoView({behavior:'smooth', block:'nearest'});
+  });
+
+  // ======================================================================
+  // Matching
+  // ======================================================================
+
+  function runMatch(){
+    const targetKeyIdx = parseInt($('target-key').value);
+    refReturnCols = Array.from($('sel-ref-return').selectedOptions).map(o=>o.value);
+    if(refReturnCols.length===0){
+      const rh = refHeaders();
+      if(rh.length) refReturnCols = [rh[0]];
+    }
+    refReturnCols.forEach(c=>{
+      if(!returnNameMap[c]) returnNameMap[c] = refReturnCols.length===1 ? 'outcome' : c;
+    });
+
+    const targetTypeOverride = $('sel-target-type').value;
+    const refTypeOverride = $('sel-ref-type').value;
+
+    const targetHeaders = state.target.headers;
+    const targetRows = state.target.rows; // array-of-arrays, [0] = headers
+
+    const sourceType = targetTypeOverride==='auto'
+      ? detectColumnType(targetRows.slice(1).map(r=>r[targetKeyIdx]))
+      : targetTypeOverride;
+
+    const refKeySampleValues = [].concat(...refFiles.map(f => (f.objRows||[]).map(r => r[f.keyCol])));
+    const refType = refTypeOverride==='auto' ? detectColumnType(refKeySampleValues) : refTypeOverride;
+
+    // Build reference indexes under multiple type interpretations, so a
+    // value can still match even if the target and reference columns were
+    // auto-detected (or typed) differently.
+    const refIndexPrimary = {};
+    const refIndexAll = {text:{}, number:{}, date:{}, phone:{}};
+    refFiles.forEach(f=>{
+      (f.objRows||[]).forEach(row=>{
+        const raw = row[f.keyCol];
+        if(raw===''||raw===null||raw===undefined) return;
+        const primary = normalize(raw, refType).key;
+        if(primary!==null) (refIndexPrimary[primary] ||= []).push(row);
+        ['text','number','date','phone'].forEach(t=>{
+          const k = normalize(raw, t).key;
+          if(k!==null) (refIndexAll[t][k] ||= []).push(row);
+        });
+      });
+    });
+
+    // Build output rows preserving every original target column, in order —
+    // new return columns are appended (or filled in place if a column with
+    // that exact output name already exists).
+    let outHeaders = targetHeaders.slice();
+    let outRows = targetRows.map(r=>r.slice());
+    const colIndexFor = {};
+    refReturnCols.forEach(c=>{
+      const outName = returnNameMap[c] || c;
+      let idx = outHeaders.indexOf(outName);
+      if(idx === -1){
+        idx = outHeaders.length;
+        outHeaders.push(outName);
+        outRows[0].push(outName);
+        for(let r=1;r<outRows.length;r++) outRows[r].push(null);
+      }
+      colIndexFor[c] = idx;
+    });
+
+    const overwrite = $('overwrite-existing').checked;
+
+    matchResults = [];
+    for(let r=1; r<outRows.length; r++){
+      const rowIndex = r-1;
+      const rawValue = (existingEdits[rowIndex] !== undefined) ? existingEdits[rowIndex] : outRows[r][targetKeyIdx];
+      const norm = normalize(rawValue, sourceType);
+      let status='unmatched', reason='No match found — value does not appear in the reference file(s)', matchedRow=null;
+
+      if(norm.key!==null && refIndexPrimary[norm.key] && refIndexPrimary[norm.key].length){
+        status='matched'; reason='Exact match';
+        matchedRow = refIndexPrimary[norm.key][0];
+        if(refIndexPrimary[norm.key].length>1) reason = 'Matched ('+refIndexPrimary[norm.key].length+' reference rows share this value — first used)';
+      } else {
+        let found=null, foundType=null;
+        for(const t of ['text','number','date','phone']){
+          if(t===sourceType) continue;
+          const altKey = normalize(rawValue, t).key;
+          if(altKey!==null && refIndexAll[t][altKey] && refIndexAll[t][altKey].length){
+            found = refIndexAll[t][altKey][0]; foundType = t; break;
+          }
+        }
+        if(found){
+          status='matched';
+          reason = 'Matched after reinterpreting as '+foundType+' (target column was read as '+sourceType+')';
+          matchedRow = found;
+        } else {
+          const candidates = Object.keys(refIndexPrimary);
+          let best=null, bestScore=0;
+          const cmp = String(norm.display).toLowerCase();
+          for(const c of candidates){
+            const score = similarity(cmp, String(c).toLowerCase());
+            if(score>bestScore){ bestScore=score; best=c; }
+          }
+          if(best!==null && bestScore>=0.65){
+            reason = 'No exact match — closest reference value is "'+best+'" ('+Math.round(bestScore*100)+'% similar)';
+          }
+        }
+      }
+
+      const returned = {};
+      if(status==='matched' && matchedRow){
+        refReturnCols.forEach(c=>{
+          const v = matchedRow[c] !== undefined ? matchedRow[c] : '';
+          returned[c] = v;
+          const idx = colIndexFor[c];
+          const existing = outRows[r][idx];
+          const hasExisting = existing!==null && existing!==undefined && existing!=='';
+          if(overwrite || !hasExisting){ outRows[r][idx] = v; }
+        });
+      }
+
+      matchResults.push({ rowIndex, displayValue: rawValue, status, reason, returned });
+    }
+
+    resultRows = outRows;
+    resultHeaders = outHeaders;
+    outBaseName = (state.target.filename||'target').replace(/\.(xlsx|xls|csv)$/i,'') + '-filled';
+
+    $('step3').style.display = 'block';
+    renderResults();
+    $('step3').scrollIntoView({behavior:'smooth', block:'start'});
+  }
+
+  $('run-btn').addEventListener('click', runMatch);
+  $('rerun-btn').addEventListener('click', runMatch);
+
+  // ======================================================================
+  // Results: stats, filter/search, inline edit + re-run
+  // ======================================================================
+
+  function renderResults(){
+    const matched = matchResults.filter(r=>r.status==='matched').length;
+    const unmatched = matchResults.length - matched;
+    $('stat-total').textContent = matchResults.length;
+    $('stat-matched').textContent = matched;
+    $('stat-unmatched').textContent = unmatched;
+    drawTable();
+  }
+
+  function drawTable(){
+    const statusFilter = $('filter-status').value;
+    const search = $('filter-search').value.trim().toLowerCase();
+    const tbody = $('results-body');
+    tbody.innerHTML = '';
+
+    const rows = matchResults.filter(r=>{
+      if(statusFilter!=='all' && r.status!==statusFilter) return false;
+      if(search && !String(r.displayValue).toLowerCase().includes(search)) return false;
+      return true;
+    });
+
+    $('empty-note').style.display = rows.length>0 ? 'none' : 'block';
+
+    rows.forEach(r=>{
+      const tr = document.createElement('tr');
+
+      const tdStatus = document.createElement('td');
+      const pill = document.createElement('span');
+      pill.className = 'pill ' + r.status;
+      pill.textContent = r.status==='matched' ? 'Matched' : 'Unmatched';
+      tdStatus.appendChild(pill);
+
+      const tdValue = document.createElement('td');
+      const input = document.createElement('input');
+      input.className = 'edit-input';
+      input.value = r.displayValue === null || r.displayValue === undefined ? '' : r.displayValue;
+      input.title = 'Edit this value and click "Re-run matching" to try again without re-uploading.';
+      input.addEventListener('change', ()=>{
+        existingEdits[r.rowIndex] = input.value;
+        input.classList.add('changed');
+      });
+      tdValue.appendChild(input);
+
+      const tdReason = document.createElement('td');
+      if(r.status==='matched'){
+        const vals = refReturnCols.map(c => (returnNameMap[c] || c) + ': ' + (r.returned[c] instanceof Date ? r.returned[c].toLocaleDateString() : r.returned[c]));
+        tdReason.innerHTML = '<div>' + vals.map(escapeHtml).join(' &nbsp;·&nbsp; ') + '</div><div class="reason">' + escapeHtml(r.reason) + '</div>';
+      } else {
+        tdReason.innerHTML = '<div class="reason">' + escapeHtml(r.reason) + '</div>';
+      }
+
+      tr.appendChild(tdStatus);
+      tr.appendChild(tdValue);
+      tr.appendChild(tdReason);
+      tbody.appendChild(tr);
+    });
+  }
+
+  $('filter-status').addEventListener('change', drawTable);
+  $('filter-search').addEventListener('input', drawTable);
+
+  // ======================================================================
+  // Export
+  // ======================================================================
+
+  $('download-btn').addEventListener('click', ()=>{
+    const ws = XLSX.utils.aoa_to_sheet(resultRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+    XLSX.writeFile(wb, outBaseName + '.xlsx');
+  });
+
+  $('download-csv-btn').addEventListener('click', ()=>{
+    const ws = XLSX.utils.aoa_to_sheet(resultRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+    XLSX.writeFile(wb, outBaseName + '.csv', {bookType:'csv', forceQuotes:false});
+  });
+
+  $('reset-btn').addEventListener('click', ()=>{
+    location.reload();
+  });
+
+})();
+</script>
+
+</body>
+</html>

@@ -143,8 +143,12 @@ Three types in `src/types/index.ts` carry everything:
 
 ```ts
 ExcelRow      = { [key: string]: any }          // one row, keyed by column name
-UploadedFile  = { id, name, data: ExcelRow[], columns: string[] }
+UploadedFile  = { id, name, data: ExcelRow[], columns: string[], isGenerated?: boolean }
 ```
+
+`isGenerated` (added 2026-10-21) is `true` for a file created via "Save to File Manager"
+from another panel's result, as opposed to a real upload — purely a display flag (shown as
+a badge in File Manager); every downstream consumer treats it identically either way.
 
 `id` is a `crypto.randomUUID()` assigned at upload. `columns` is **derived from the first
 row only** — `Object.keys(jsonData[0])` in `readExcelFile`, and `Object.keys(newData[0])`
@@ -175,16 +179,30 @@ All application state lives in `App.tsx`. There is no store, no context, no pers
 reload discards every uploaded file. This is a genuine property of the product, not an
 oversight — see `system-rules.md` §1.
 
-`App.tsx` exposes exactly two mutators to its children:
+`App.tsx` exposes three mutators to its children (updated 2026-10-21 — this section was
+stale: it previously said "exactly two" and that derived-result panels "never write back
+into `files`", neither still true):
 
 - `handleFileUpdate(fileId, newData)` — replaces a file's rows and recomputes `columns`.
-  Used by `CleaningPanel` and `VlookupPanel`.
+  Used by `CleaningPanel`. (`VlookupPanel` no longer exists as a native panel — VLookup is
+  presently a standalone HTML tool under `public/extra-tools/`, with no access to this
+  state at all; see `features-functionalities.md`'s staleness on this point too.)
 - `handleDownload(fileId, format)` — exports a file as `<name>_modified.<ext>`.
   Used by `DataView` via `ExportMenu`.
+- `handleSaveAsFile(name, data)` — **added 2026-10-21**. Appends a new `UploadedFile`
+  (`isGenerated: true`) to `files`, reusing the exact duplicate-name confirmation
+  `handleFilesSelect` already used for real uploads. This is what lets a result produced
+  in one panel become selectable in every other panel's file dropdown without a
+  download-then-reupload round trip — conceptually Power Query's "Load To" pattern, mapped
+  onto this app's existing `UploadedFile` shape rather than a new data model.
 
-Panels that produce *derived* artefacts rather than editing a file — `ComparePanel`,
-`MergePanel` — hold results locally and call `downloadExcelFile` directly. They never write
-back into `files`.
+Panels that produce *derived* artefacts rather than editing a file in place —
+`CleaningPanel`'s processed results, `ComparePanel`'s result sets, `MergePanel`'s
+Generations History and column-merge output — still hold those results locally and call
+`downloadExcelFile` directly for a plain download, **and** now also offer a "Save to File
+Manager" action (via `onSaveAsFile`) that promotes the same data into the shared pool
+instead. Nothing is written back into the *source* file either way — a save always creates
+a new, separate `UploadedFile` entry.
 
 ### The Formula → Operations bridge
 
